@@ -231,54 +231,106 @@ function diceMesh(sides){
  const max=Math.max(...v.map(p=>Math.hypot(...p)));v=v.map(p=>p.map(x=>x/max));
  return {v,f};
 }
-let diceAudioContext=null, diceAudioReady=false, diceAudioBuffer=null;
+// 4.0: Layered tabletop dice Foley. All sound is generated locally; no downloads.
+let diceAudioContext=null,diceAudioBuffer=null,diceAudioMaster=null,diceAudioReady=false;
+let diceAudioQueue=[],diceAudioRollingUntil=0;
 function unlockDiceAudio(){
  try{
   const Audio=window.AudioContext||window.webkitAudioContext;if(!Audio)return;
-  const ac=diceAudioContext||(diceAudioContext=new Audio());
-  if(ac.state==='suspended')ac.resume().then(()=>{diceAudioReady=true;}).catch(()=>{});
-  else diceAudioReady=true;
-  // iOS Safari: start a tiny silent source synchronously during the user's tap.
-  const silent=ac.createBuffer(1,1,ac.sampleRate),source=ac.createBufferSource();
-  source.buffer=silent;source.connect(ac.destination);source.start(0);
- }catch(e){console.warn('Dice audio unavailable',e);}
+  const ac=diceAudioContext||(diceAudioContext=new Audio({latencyHint:'interactive'}));
+  if(!diceAudioMaster){
+   diceAudioMaster=ac.createGain();diceAudioMaster.gain.value=.85;
+   const limiter=ac.createDynamicsCompressor();
+   limiter.threshold.value=-12;limiter.knee.value=10;limiter.ratio.value=4;
+   diceAudioMaster.connect(limiter);limiter.connect(ac.destination);
+  }
+  if(ac.state==='suspended'){
+   ac.resume().then(()=>{
+    diceAudioReady=true;
+    const queued=diceAudioQueue.splice(0);
+    queued.forEach(q=>diceSound(q.kind,q.force,true));
+   }).catch(e=>console.warn('Audio resume blocked',e));
+  }else diceAudioReady=true;
+  const silent=ac.createBufferSource();
+  silent.buffer=ac.createBuffer(1,1,ac.sampleRate);
+  silent.connect(diceAudioMaster);silent.start();
+ }catch(e){console.warn('Dice audio init',e);}
 }
 function diceNoise(ac){
  if(diceAudioBuffer&&diceAudioBuffer.sampleRate===ac.sampleRate)return diceAudioBuffer;
- const b=ac.createBuffer(1,Math.floor(ac.sampleRate*1.3),ac.sampleRate),data=b.getChannelData(0);
- for(let i=0;i<data.length;i++)data[i]=Math.random()*2-1;
- diceAudioBuffer=b;return b;
+ const buffer=ac.createBuffer(1,Math.floor(ac.sampleRate*2),ac.sampleRate);
+ const arr=buffer.getChannelData(0);
+ // High-frequency grain, suitable for sharp resin/polyhedral dice on hardwood.
+ for(let i=0;i<arr.length;i++)arr[i]=(Math.random()*2-1)*.78+(i?arr[i-1]*.22:0);
+ diceAudioBuffer=buffer;return buffer;
 }
-function diceSound(kind){
+function diceTap(at,intensity=1,pitch=1){
+ const ac=diceAudioContext;if(!ac||ac.state!=='running')return;
+ const volume=Math.max(.03,Math.min(1,intensity));
+ const noise=ac.createBufferSource(),band=ac.createBiquadFilter(),ng=ac.createGain();
+ noise.buffer=diceNoise(ac);noise.playbackRate.value=.8+Math.random()*.45;
+ band.type='bandpass';band.frequency.value=(900+Math.random()*1500)*pitch;band.Q.value=.65;
+ ng.gain.setValueAtTime(.0001,at);
+ ng.gain.exponentialRampToValueAtTime(.27*volume,at+.003);
+ ng.gain.exponentialRampToValueAtTime(.0001,at+.036+volume*.034);
+ noise.connect(band);band.connect(ng);ng.connect(diceAudioMaster);
+ noise.start(at);noise.stop(at+.09);
+ const tone=ac.createOscillator(),tg=ac.createGain();
+ tone.type='triangle';tone.frequency.setValueAtTime((340+Math.random()*170)*pitch,at);
+ tone.frequency.exponentialRampToValueAtTime(130*pitch,at+.06);
+ tg.gain.setValueAtTime(.0001,at);
+ tg.gain.exponentialRampToValueAtTime(.11*volume,at+.003);
+ tg.gain.exponentialRampToValueAtTime(.0001,at+.085);
+ tone.connect(tg);tg.connect(diceAudioMaster);tone.start(at);tone.stop(at+.09);
+}
+function diceScrape(at,duration=.3,intensity=.25){
+ const ac=diceAudioContext;if(!ac||ac.state!=='running')return;
+ const src=ac.createBufferSource(),filter=ac.createBiquadFilter(),gain=ac.createGain();
+ src.buffer=diceNoise(ac);src.loop=true;
+ filter.type='bandpass';filter.frequency.value=500+Math.random()*360;filter.Q.value=.42;
+ gain.gain.setValueAtTime(.0001,at);
+ gain.gain.linearRampToValueAtTime(intensity,at+.025);
+ gain.gain.setValueAtTime(intensity*.75,at+duration*.55);
+ gain.gain.exponentialRampToValueAtTime(.0001,at+duration);
+ src.connect(filter);filter.connect(gain);gain.connect(diceAudioMaster);
+ src.start(at);src.stop(at+duration+.01);
+}
+function diceSound(kind,force=1,fromQueue=false){
  try{
   const ac=diceAudioContext;
-  if(!ac||ac.state!=='running')return;
-  const t=ac.currentTime,noise=ac.createBufferSource(),filter=ac.createBiquadFilter(),gain=ac.createGain();
-  noise.buffer=diceNoise(ac);
-  const isThunder=kind==='thunder',isCrack=kind==='crack',isRoll=kind==='roll';
-  filter.type=isThunder?'lowpass':isRoll?'bandpass':'highpass';
-  filter.frequency.setValueAtTime(isThunder?170:isRoll?680:isCrack?1550:1200,t);
-  filter.Q.value=isRoll?.55:.7;
-  const duration=isThunder?1.2:isRoll?.55:isCrack?.4:.15;
-  gain.gain.setValueAtTime(.0001,t);
-  gain.gain.exponentialRampToValueAtTime(isThunder?.4:isRoll?.19:isCrack?.38:.30,t+.009);
-  if(isThunder){filter.frequency.exponentialRampToValueAtTime(65,t+.9);gain.gain.exponentialRampToValueAtTime(.0001,t+1.15);}
-  else if(isRoll){
-   gain.gain.setValueAtTime(.13,t+.1);gain.gain.setValueAtTime(.18,t+.19);
-   gain.gain.exponentialRampToValueAtTime(.0001,t+.52);
-  }else gain.gain.exponentialRampToValueAtTime(.0001,t+duration);
-  noise.connect(filter);filter.connect(gain);gain.connect(ac.destination);
-  noise.start(t);noise.stop(t+duration);
-  if(isThunder||isCrack||kind==='bounce'){
-   const osc=ac.createOscillator(),og=ac.createGain();
-   osc.type=isThunder?'sawtooth':'sine';
-   osc.frequency.setValueAtTime(isThunder?75:isCrack?320:180,t);
-   osc.frequency.exponentialRampToValueAtTime(isThunder?33:65,t+(isThunder?.8:.13));
-   og.gain.setValueAtTime(.0001,t);og.gain.exponentialRampToValueAtTime(isThunder?.18:.11,t+.012);
-   og.gain.exponentialRampToValueAtTime(.0001,t+(isThunder?.9:.16));
-   osc.connect(og);og.connect(ac.destination);osc.start(t);osc.stop(t+(isThunder?.92:.18));
+  if(!ac||ac.state!=='running'){
+   if(!fromQueue&&diceAudioQueue.length<4)diceAudioQueue.push({kind,force});
+   return;
   }
- }catch(e){console.warn('Dice sound failed',e);}
+  const t=ac.currentTime+.008;
+  if(kind==='roll'){
+   // Hand releases dice: a rattling cascade, first hard, then progressively lighter.
+   diceAudioRollingUntil=t+1.8;
+   diceScrape(t,.25,.16);
+   const taps=[0,.055,.116,.204,.295,.41,.55,.72,.94,1.17,1.4,1.61];
+   taps.forEach((offset,i)=>diceTap(t+offset,(.9-i*.052)*(.75+Math.random()*.4),.8+Math.random()*.55));
+   diceScrape(t+.34,.45,.13);
+   diceScrape(t+.85,.42,.075);
+  }else if(kind==='bounce'){
+   // Impact sound only when visually bouncing, with slight random timbre.
+   diceTap(t,Math.min(1,.58*force),.85+Math.random()*.4);
+   diceScrape(t+.02,.10,.065);
+  }else if(kind==='crack'){
+   for(let i=0;i<10;i++)diceTap(t+Math.random()*.36,.4+Math.random()*.7,.7+Math.random()*1.5);
+   diceScrape(t,.6,.24);
+  }else if(kind==='thunder'){
+   const noise=ac.createBufferSource(),low=ac.createBiquadFilter(),gain=ac.createGain();
+   noise.buffer=diceNoise(ac);noise.loop=true;
+   low.type='lowpass';low.frequency.setValueAtTime(220,t);low.frequency.exponentialRampToValueAtTime(58,t+1.6);
+   gain.gain.setValueAtTime(.0001,t);
+   gain.gain.linearRampToValueAtTime(.48,t+.035);
+   gain.gain.setValueAtTime(.28,t+.25);
+   gain.gain.exponentialRampToValueAtTime(.0001,t+1.9);
+   noise.connect(low);low.connect(gain);gain.connect(diceAudioMaster);
+   noise.start(t);noise.stop(t+1.92);
+   diceTap(t,.85,.45);
+  }
+ }catch(e){console.warn('Dice audio playback',e);}
 }
 // Natural 20 storm: branching, persistent bolts with realistic layered glow.
 function seededStorm(seed){let v=(seed>>>0)||1;return ()=>{v=(Math.imul(1664525,v)+1013904223)>>>0;return v/4294967296;};}
@@ -421,7 +473,7 @@ function showScreenDice(sides,results,keptIndex,title,total){
  ctx.clearRect(0,0,w,h);
  const glow=ctx.createRadialGradient(w/2,floor,0,w/2,floor,w*.55);glow.addColorStop(0,'#533b6b44');glow.addColorStop(1,'#00000000');ctx.fillStyle=glow;ctx.fillRect(0,0,w,h);
  dice.forEach((d,i)=>{
-  if(!settled){const t=Math.min(1,progress*1.25);d.x+=(d.targetX-d.x)*.08;d.y=-radius*2+(floor-radius*.95+radius*2)*(1-Math.pow(1-t,2));d.y-=Math.abs(Math.sin(t*11))*radius*.6*(1-t);d.spin=d.spin.map((v,k)=>v+(k+1)*.085*(1-t*.8));if(t>.48&&now-soundAt>190){diceSound('bounce');soundAt=now;}}
+  if(!settled){const t=Math.min(1,progress*1.25);d.x+=(d.targetX-d.x)*.08;d.y=-radius*2+(floor-radius*.95+radius*2)*(1-Math.pow(1-t,2));d.y-=Math.abs(Math.sin(t*11))*radius*.6*(1-t);d.spin=d.spin.map((v,k)=>v+(k+1)*.085*(1-t*.8));if(t>.48&&now-soundAt>190){diceSound('bounce',.45);soundAt=now;}}
   else{d.x+=(d.targetX-d.x)*.12;d.y+=(floor-radius*.95-d.y)*.12;}
   const breaking=settled&&critical===1&&i===shatterIndex;
   const breakT=breaking?(elapsed-duration)/1000:0;
