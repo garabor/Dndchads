@@ -231,8 +231,55 @@ function diceMesh(sides){
  const max=Math.max(...v.map(p=>Math.hypot(...p)));v=v.map(p=>p.map(x=>x/max));
  return {v,f};
 }
-let diceAudioContext=null;
-function diceSound(kind){try{const Audio=window.AudioContext||window.webkitAudioContext;if(!Audio)return;const ac=diceAudioContext||(diceAudioContext=new Audio());if(ac.state==='suspended')ac.resume();const t=ac.currentTime,osc=ac.createOscillator(),gain=ac.createGain(),filter=ac.createBiquadFilter();osc.type=kind==='thunder'?'sawtooth':'triangle';filter.type='lowpass';filter.frequency.value=kind==='thunder'?420:kind==='crack'?1700:750;osc.frequency.setValueAtTime(kind==='thunder'?90:kind==='crack'?420:130,t);osc.frequency.exponentialRampToValueAtTime(kind==='thunder'?38:kind==='crack'?75:58,t+.24);gain.gain.setValueAtTime(.0001,t);gain.gain.exponentialRampToValueAtTime(kind==='thunder'?.18:.09,t+.015);gain.gain.exponentialRampToValueAtTime(.0001,t+(kind==='thunder'?.65:.22));osc.connect(filter);filter.connect(gain);gain.connect(ac.destination);osc.start(t);osc.stop(t+(kind==='thunder'?.7:.25));}catch(e){}}
+let diceAudioContext=null, diceAudioReady=false, diceAudioBuffer=null;
+function unlockDiceAudio(){
+ try{
+  const Audio=window.AudioContext||window.webkitAudioContext;if(!Audio)return;
+  const ac=diceAudioContext||(diceAudioContext=new Audio());
+  if(ac.state==='suspended')ac.resume().then(()=>{diceAudioReady=true;}).catch(()=>{});
+  else diceAudioReady=true;
+  // iOS Safari: start a tiny silent source synchronously during the user's tap.
+  const silent=ac.createBuffer(1,1,ac.sampleRate),source=ac.createBufferSource();
+  source.buffer=silent;source.connect(ac.destination);source.start(0);
+ }catch(e){console.warn('Dice audio unavailable',e);}
+}
+function diceNoise(ac){
+ if(diceAudioBuffer&&diceAudioBuffer.sampleRate===ac.sampleRate)return diceAudioBuffer;
+ const b=ac.createBuffer(1,Math.floor(ac.sampleRate*1.3),ac.sampleRate),data=b.getChannelData(0);
+ for(let i=0;i<data.length;i++)data[i]=Math.random()*2-1;
+ diceAudioBuffer=b;return b;
+}
+function diceSound(kind){
+ try{
+  const ac=diceAudioContext;
+  if(!ac||ac.state!=='running')return;
+  const t=ac.currentTime,noise=ac.createBufferSource(),filter=ac.createBiquadFilter(),gain=ac.createGain();
+  noise.buffer=diceNoise(ac);
+  const isThunder=kind==='thunder',isCrack=kind==='crack',isRoll=kind==='roll';
+  filter.type=isThunder?'lowpass':isRoll?'bandpass':'highpass';
+  filter.frequency.setValueAtTime(isThunder?170:isRoll?680:isCrack?1550:1200,t);
+  filter.Q.value=isRoll?.55:.7;
+  const duration=isThunder?1.2:isRoll?.55:isCrack?.4:.15;
+  gain.gain.setValueAtTime(.0001,t);
+  gain.gain.exponentialRampToValueAtTime(isThunder?.4:isRoll?.19:isCrack?.38:.30,t+.009);
+  if(isThunder){filter.frequency.exponentialRampToValueAtTime(65,t+.9);gain.gain.exponentialRampToValueAtTime(.0001,t+1.15);}
+  else if(isRoll){
+   gain.gain.setValueAtTime(.13,t+.1);gain.gain.setValueAtTime(.18,t+.19);
+   gain.gain.exponentialRampToValueAtTime(.0001,t+.52);
+  }else gain.gain.exponentialRampToValueAtTime(.0001,t+duration);
+  noise.connect(filter);filter.connect(gain);gain.connect(ac.destination);
+  noise.start(t);noise.stop(t+duration);
+  if(isThunder||isCrack||kind==='bounce'){
+   const osc=ac.createOscillator(),og=ac.createGain();
+   osc.type=isThunder?'sawtooth':'sine';
+   osc.frequency.setValueAtTime(isThunder?75:isCrack?320:180,t);
+   osc.frequency.exponentialRampToValueAtTime(isThunder?33:65,t+(isThunder?.8:.13));
+   og.gain.setValueAtTime(.0001,t);og.gain.exponentialRampToValueAtTime(isThunder?.18:.11,t+.012);
+   og.gain.exponentialRampToValueAtTime(.0001,t+(isThunder?.9:.16));
+   osc.connect(og);og.connect(ac.destination);osc.start(t);osc.stop(t+(isThunder?.92:.18));
+  }
+ }catch(e){console.warn('Dice sound failed',e);}
+}
 // Natural 20 storm: branching, persistent bolts with realistic layered glow.
 function seededStorm(seed){let v=(seed>>>0)||1;return ()=>{v=(Math.imul(1664525,v)+1013904223)>>>0;return v/4294967296;};}
 function makeStormBolts(w,h){
@@ -412,6 +459,7 @@ function showScreenDice(sides,results,keptIndex,title,total){
  activeDiceAnimation=requestAnimationFrame(frame);
 }
 function roll(n,sides,bonus=0,title='Roll',applyEx=false){
+ unlockDiceAudio();
  n=clamp(Math.floor(num(n,1)),1,20);sides=clamp(Math.floor(num(sides,20)),2,100);
  const mode=$('rollMode')?.value||'normal';
  const contested=sides===20&&n===1&&mode!=='normal';
