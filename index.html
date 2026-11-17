@@ -151,14 +151,68 @@ function bgBonus(k){return num(state.backgroundBonuses?.[k])}
 function effectiveScore(k){return num(state.abilities[k],10)+bgBonus(k)+featAbilityBonus(k)}
 // Offline rule engine: additive effects only; no mutation of a character's base scores.
 const ITEM_AC_TABLE={'Padded Armor':['light',11],'Leather Armor':['light',11],'Studded Leather Armor':['light',12],'Hide Armor':['medium',12],'Chain Shirt':['medium',13],'Scale Mail':['medium',14],'Breastplate':['medium',14],'Half Plate Armor':['medium',15],'Half Plate':['medium',15],'Ring Mail':['heavy',14],'Chain Mail':['heavy',16],'Splint Armor':['heavy',17],'Splint':['heavy',17],'Plate Armor':['heavy',18],'Plate':['heavy',18]};
+
+// 5.0 rule registry: deterministic effect descriptors shared by item/feat resolution.
+// This registry is deliberately explicit: unsupported effects are never guessed from prose.
+const LEDGER_RULE_REGISTRY=Object.freeze({
+ items:Object.freeze({
+  'Cloak of Protection':{ac:1,saves:1},
+  'Ring of Protection':{ac:1,saves:1},
+  'Stone of Good Luck (Luckstone)':{saves:1,checks:1},
+  'Amulet of Health':{minimum:{con:19}},
+  'Gauntlets of Ogre Power':{minimum:{str:19}},
+  'Headband of Intellect':{minimum:{int:19}},
+  'Bracers of Defense':{ac:2,condition:'unarmored-no-shield'},
+  'Sentinel Shield':{notes:['Advantage on Initiative and Perception checks']},
+  'Boots of Speed':{notes:['Speed doubling requires activation; not applied passively']}
+ }),
+ feats:Object.freeze({
+  Tough:{hpPerLevel:2},
+  Speedy:{speed:10},
+  Mobile:{speed:10}
+ })
+});
+function ledgerResolvedEffects(){
+ const effects=[],unsupported=[];
+ const items=Array.isArray(state.items)?state.items:[];
+ const equipped=items.filter(it=>it&&it.equipped&&num(it.quantity,1)>0&&(!it.requiresAttunement||it.attuned));
+ const hasArmor=equipped.some(it=>!!ITEM_AC_TABLE[String(it.name||'').replace(/ \+[123]$/,'')]);
+ const hasShield=equipped.some(it=>/^Shield(?: \+[123])?$/.test(String(it.name||'')));
+ for(const it of equipped){
+  const name=String(it.name||'');
+  const rule=LEDGER_RULE_REGISTRY.items[name];
+  if(rule){
+   if(rule.condition==='unarmored-no-shield'&&(hasArmor||hasShield||state.acMode!=='unarmored'))continue;
+   effects.push({source:'item',name,rule});
+  }else if(!ITEM_AC_TABLE[name.replace(/ \+[123]$/,'')]&&!/^Shield(?: \+[123])?$/.test(name)&&!/\s\+[123]$/.test(name)){
+   unsupported.push(name);
+  }
+ }
+ for(const name of allChosenFeats()){
+  const rule=LEDGER_RULE_REGISTRY.feats[name];
+  if(rule)effects.push({source:'feat',name,rule});
+ }
+ return {effects,unsupported};
+}
+function ledgerRuleTotals(){
+ const result={ac:0,saves:0,checks:0,hp:0,speed:0,minimum:{},sources:[]};
+ for(const effect of ledgerResolvedEffects().effects){
+  const r=effect.rule,origin=effect.source+': '+effect.name;
+  for(const key of ['ac','saves','checks','speed'])result[key]+=r[key]||0;
+  result.hp+=(r.hpPerLevel||0)*clamp(num(state.level,1),1,20);
+  for(const [key,value] of Object.entries(r.minimum||{}))result.minimum[key]=Math.max(result.minimum[key]||0,value);
+  result.sources.push({origin,rule:r});
+ }
+ return result;
+}
 // 4.7 deterministic feat + magic item modifiers (2024/legacy where applicable).
 function featStatEffects(){
  const chosen=allChosenFeats(),level=clamp(num(state.level,1),1,20);
  const count=n=>chosen.filter(x=>x===n).length;
  const notes=[];
- const hp=count('Tough')*2*level;
+ const hp=ledgerRuleTotals().hp;
  if(hp)notes.push('Tough: +'+hp+' maximum HP');
- const speed=(count('Speedy')+count('Mobile'))*10;
+ const speed=ledgerRuleTotals().speed;
  if(speed)notes.push('Speedy/Mobile: +'+speed+' ft walking speed');
  const resilient=Object.values(state.featChoices||{}).filter(e=>e?.name==='Resilient'&&e.a).map(e=>e.a);
  if(resilient.length)notes.push('Resilient: saving throw proficiency ('+resilient.join(', ').toUpperCase()+')');
@@ -202,13 +256,13 @@ function ledgerCharacterSnapshot(){
  const spellModifier=state.spellAbility?a(state.spellAbility):null;
  const spellAttack=spellModifier===null?null:prof()+spellModifier+num(state.spellBonus)+equipment.spellAttack+magic.spellAttack;
  const spellDC=spellModifier===null?null:8+prof()+spellModifier+num(state.spellBonus)+magic.spellDC;
- const warnings=[...armor.warnings];
+ const ruleDetails=ledgerResolvedEffects();const warnings=[...armor.warnings];
  if(armor.disadvantage)warnings.push('Armor or shield proficiency penalties apply to Strength/Dexterity attacks, checks and saves; spellcasting is restricted.');
  return {
   abilities,ac:ac(),movement,maximumHP,
   currentHP:clamp(num(state.hpCurrent),0,maximumHP),
   spellAttack,spellDC,attacks,warnings,
-  sources:{equipment,feats,magic,armor,spell},
+  sources:{equipment,feats,magic,armor,spell,registry:ruleDetails},
   limitations:['Some conditional item and feat effects require manual activation.',
    'Armor proficiency restrictions are warnings, not yet enforced in every roll.',
    'Not all catalog entries have machine-readable rules.']
@@ -229,7 +283,10 @@ function ledgerRenderSnapshot(){
  '<div class="grid two">'+stats.map(([name,value])=>'<div class="field"><label>'+esc(name)+'</label><strong>'+esc(fmtValue(value))+'</strong></div>').join('')+'</div>'+
  '<details><summary>Active rules & warnings ('+d.warnings.length+')</summary>'+
  (d.warnings.length?'<ul>'+d.warnings.map(x=>'<li>'+esc(x)+'</li>').join('')+'</ul>':'<p>No detected armor-rule warnings.</p>')+
- '<p class="hint">'+esc(d.limitations.join(' '))+'</p></details>';
+ '<p class="hint">'+esc(d.limitations.join(' '))+'</p></details>'+
+ '<details><summary>Effect sources ('+d.sources.registry.effects.length+')</summary><ul>'+
+ d.sources.registry.effects.map(x=>'<li>'+esc(x.source+': '+x.name)+' — '+esc(Object.entries(x.rule).filter(([k])=>k!=='notes').map(([k,v])=>k+': '+(typeof v==='object'?JSON.stringify(v):v)).join(', '))+'</li>').join('')+
+ '</ul>'+(d.sources.registry.unsupported.length?'<p class="hint">Items without registered passive rules: '+esc(d.sources.registry.unsupported.join(', '))+'</p>':'')+'</details>';
 }
 function ledgerStatBreakdown(){
  const feat=featStatEffects(),item=activeItemEffects(),magic=magicItemExtraEffects();
@@ -251,15 +308,9 @@ function activeItemEffects(){
   if(name==='Shield')fx.shield=Math.max(fx.shield,2);
   if(/^Shield \+[123]$/.test(name))fx.shield=Math.max(fx.shield,2+Number(name.slice(-1)));
   // Generic Armor +1 represents a magical suit; do not stack its bonus onto another armor suit.
-  if(name==='Cloak of Protection'||name==='Ring of Protection'){fx.ac++;fx.saves++}
-  if(name==='Stone of Good Luck (Luckstone)'){fx.saves++;fx.checks++}
-  // Bracers evaluated after the loop, independent of item ordering.
-  if(name==='Amulet of Health')fx.scores.con=Math.max(fx.scores.con||0,19);
-  if(name==='Gauntlets of Ogre Power')fx.scores.str=Math.max(fx.scores.str||0,19);
-  if(name==='Headband of Intellect')fx.scores.int=Math.max(fx.scores.int||0,19);
   // Wand of the War Mage bonuses are resolved centrally by magicItemExtraEffects().
  }
- if(items.some(x=>x&&x.equipped&&(!x.requiresAttunement||x.attuned)&&x.name==='Bracers of Defense')&&!fx.armor&&!fx.shield&&state.acMode==='unarmored')fx.ac+=2;
+ const totals=ledgerRuleTotals();fx.ac+=totals.ac;fx.saves+=totals.saves;fx.checks+=totals.checks;fx.scores={...fx.scores,...totals.minimum};
  // Armor effects require an order-independent second pass.
  
  return fx;
