@@ -249,7 +249,9 @@ function recordedSound(kind,count=1){
    const begin=()=>{audio.play().catch(()=>{});};
    if(i===0)begin();else setTimeout(begin,Math.round(i*48+Math.random()*55));
    pool.push(audio);
-   audio.addEventListener('ended',()=>{const j=pool.indexOf(audio);if(j>=0)pool.splice(j,1);},{once:true});
+   const cleanup=()=>{const j=pool.indexOf(audio);if(j>=0)pool.splice(j,1);audio.removeAttribute('src');audio.load();};
+   audio.addEventListener('ended',cleanup,{once:true});
+   audio.addEventListener('error',cleanup,{once:true});
    if(pool.length>24){const old=pool.shift();old.pause();}
   }catch(e){console.warn('Recorded sound unavailable',e);}
  }
@@ -491,8 +493,9 @@ function showScreenDice(sides,results,keptIndex,title,total){
  // Each broken fragment is an actual polygon from the die's own 3D mesh.
  const shatterIndex=critical===1?(keptIndex>=0?keptIndex:0):-1;
  let soundAt=0;
- recordedSound('roll',shown.length);
- function frame(now){if(seq!==diceThrowSequence||!overlay.isConnected)return;const elapsed=now-start,progress=Math.min(1,elapsed/duration),settled=progress>=1;
+ // Sound must never interrupt the animation if an audio source fails.
+ try { recordedSound('roll',dice.length); } catch(e) { console.warn('Dice recording unavailable',e); }
+ function frame(now){try{if(seq!==diceThrowSequence||!overlay.isConnected)return;const elapsed=now-start,progress=Math.min(1,elapsed/duration),settled=progress>=1;
  ctx.clearRect(0,0,w,h);
  const glow=ctx.createRadialGradient(w/2,floor,0,w/2,floor,w*.55);glow.addColorStop(0,'#533b6b44');glow.addColorStop(1,'#00000000');ctx.fillStyle=glow;ctx.fillRect(0,0,w,h);
  dice.forEach((d,i)=>{
@@ -529,11 +532,12 @@ function showScreenDice(sides,results,keptIndex,title,total){
  if(settled&&critical===1){const t=(elapsed-duration)/1000;if(t<.4){ctx.fillStyle=`rgba(255,208,233,${Math.max(0,.17-t*.4)})`;ctx.fillRect(0,0,w,h);}}
  if(settled&&critical===20){
   const t=(elapsed-duration)/1000;
-  if(t<1.7){if(!frame.stormBolts){frame.stormBolts=makeStormBolts(w,h);recordedSound('thunder');}
+  if(t<1.7){if(!frame.stormBolts){frame.stormBolts=makeStormBolts(w,h);try { recordedSound('thunder'); } catch(e) { console.warn('Thunder recording unavailable',e); }}
    drawStorm(ctx,w,h,t,frame.stormBolts);
   }
  }
  if(elapsed<duration+(critical===20?3600:1900))activeDiceAnimation=requestAnimationFrame(frame);else{overlay.remove();activeDiceAnimation=null;}
+ }catch(error){console.error('3D dice renderer:',error);overlay.remove();activeDiceAnimation=null;toast('Dice rolled: '+total);}
  }
  activeDiceAnimation=requestAnimationFrame(frame);
 }
