@@ -197,41 +197,119 @@ function drawAnimatedDice(sides,results,keptIndex=-1){
  setTimeout(()=>{if(current===diceAnimationId)stage.querySelectorAll('.rolling').forEach(el=>el.classList.remove('rolling'))},800);
 }
 
-let diceThrowSequence=0;
+
+let diceThrowSequence=0, activeDiceAnimation=null;
+function diceMesh(sides){
+ const phi=(1+Math.sqrt(5))/2;
+ let v=[],f=[];
+ if(sides===4){v=[[1,1,1],[-1,-1,1],[-1,1,-1],[1,-1,-1]];f=[[0,1,2],[0,3,1],[0,2,3],[1,3,2]];}
+ else if(sides===6){v=[[-1,-1,-1],[1,-1,-1],[1,1,-1],[-1,1,-1],[-1,-1,1],[1,-1,1],[1,1,1],[-1,1,1]];f=[[0,3,2,1],[4,5,6,7],[0,1,5,4],[1,2,6,5],[2,3,7,6],[3,0,4,7]];}
+ else if(sides===8){v=[[0,0,1.5],[0,0,-1.5],[1,0,0],[0,1,0],[-1,0,0],[0,-1,0]];for(let i=0;i<4;i++){f.push([0,2+i,2+(i+1)%4]);f.push([1,2+(i+1)%4,2+i]);}}
+ else if(sides===10||sides===100){
+   v=[[0,0,1.65],[0,0,-1.65]];
+   for(let i=0;i<10;i++){const angle=i*Math.PI/5;v.push([Math.cos(angle),Math.sin(angle),i%2?-.36:.36]);}
+   for(let i=0;i<10;i++){f.push(i%2===0?[0,2+i,2+(i+1)%10]:[1,2+(i+1)%10,2+i]);}
+ }
+ else{
+   v=[[-1,phi,0],[1,phi,0],[-1,-phi,0],[1,-phi,0],[0,-1,phi],[0,1,phi],[0,-1,-phi],[0,1,-phi],[phi,0,-1],[phi,0,1],[-phi,0,-1],[-phi,0,1]];
+   f=[[0,11,5],[0,5,1],[0,1,7],[0,7,10],[0,10,11],[1,5,9],[5,11,4],[11,10,2],[10,7,6],[7,1,8],[3,9,4],[3,4,2],[3,2,6],[3,6,8],[3,8,9],[4,9,5],[2,4,11],[6,2,10],[8,6,7],[9,8,1]];
+   if(sides===12){
+     const centers=f.map(face=>{let p=[0,0,0];face.forEach(i=>v[i].forEach((n,k)=>p[k]+=n/3));let l=Math.hypot(...p);return p.map(x=>x/l*1.4)});
+     const pentagons=v.map((point,i)=>{const adjacent=f.map((face,j)=>face.includes(i)?j:-1).filter(j=>j>=0);
+       const axis=point.map(x=>x/Math.hypot(...point)),basis=Math.abs(axis[2])<.9?[0,0,1]:[0,1,0];
+       const cross=(a,b)=>[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]];
+       const u=cross(axis,basis),w=cross(axis,u);
+       return adjacent.sort((a,b)=>Math.atan2(centers[a].reduce((z,x,k)=>z+x*w[k],0),centers[a].reduce((z,x,k)=>z+x*u[k],0))-Math.atan2(centers[b].reduce((z,x,k)=>z+x*w[k],0),centers[b].reduce((z,x,k)=>z+x*u[k],0)));
+     });
+     v=centers;f=pentagons;
+   }
+ }
+ const max=Math.max(...v.map(p=>Math.hypot(...p)));v=v.map(p=>p.map(x=>x/max));
+ return {v,f};
+}
 function showScreenDice(sides,results,keptIndex,title,total){
  const seq=++diceThrowSequence;
+ if(activeDiceAnimation)cancelAnimationFrame(activeDiceAnimation);
  document.getElementById('diceThrowOverlay')?.remove();
- const overlay=document.createElement('div');
- overlay.id='diceThrowOverlay';
- overlay.setAttribute('aria-label','Animated dice roll: '+title);
- const shapes={4:'0,70 40,2 80,70',6:'8,8 72,8 72,72 8,72',8:'40,2 77,40 40,78 3,40',10:'40,2 73,23 65,63 40,79 15,63 7,23',12:'40,2 69,15 78,40 65,68 40,78 15,68 2,40 11,15',20:'40,1 62,10 78,30 78,52 62,70 40,79 18,70 2,52 2,30 18,10',100:'40,2 73,23 65,63 40,79 15,63 7,23'};
- const shown=results.slice(0,12),width=Math.min(window.innerWidth,700);
- overlay.innerHTML='<div class="throw-caption">'+esc(title)+'<small>Rolling '+shown.length+'d'+sides+'</small></div>';
- shown.forEach((value,i)=>{
-   const die=document.createElement('div');
-   die.className='throw-die tumbling';
-   const spread=shown.length===1?0:(i-(shown.length-1)/2)*Math.min(94,width/(shown.length+1));
-   const randomX=(Math.random()-.5)*width*.85;
-   const randomY=-window.innerHeight*.5-Math.random()*160;
-   const midX=(Math.random()-.5)*width*.75;
-   const bounceX=spread+(Math.random()-.5)*110;
-   die.style.cssText=`--fromX:${randomX}px;--fromY:${randomY}px;--midX:${midX}px;--midY:${-80-Math.random()*120}px;--bounceX:${bounceX}px;--endX:${spread}px;--delay:${i*45}ms`;
-   die.innerHTML=`<svg viewBox="0 0 80 80" aria-hidden="true"><polygon points="${shapes[sides]||shapes[20]}" fill="#51356d" stroke="#edc982" stroke-width="3"/><path d="M18 32L40 13L62 32L57 58L40 68L23 58Z" fill="none" stroke="#b38ec7" stroke-width="1.4" opacity=".75"/></svg><span class="throw-value">?</span><span class="throw-kind">d${sides}</span>`;
-   overlay.appendChild(die);
- });
+ const overlay=document.createElement('div');overlay.id='diceThrowOverlay';
+ overlay.style.cssText='position:fixed;inset:0;z-index:99999;pointer-events:none;background:radial-gradient(ellipse at 50% 65%,#241535a8,#07051155);overflow:hidden';
+ const heading=document.createElement('div');heading.className='throw-caption';
+ heading.textContent=title+' · 3D Dice Roll';overlay.appendChild(heading);
+ const canvas=document.createElement('canvas');canvas.style.cssText='width:100%;height:100%;display:block';overlay.appendChild(canvas);
  document.body.appendChild(overlay);
- const duration=1550+shown.length*45;
- window.setTimeout(()=>{
+ const ctx=canvas.getContext('2d');if(!ctx){overlay.remove();return;}
+ let w=0,h=0,dpr=1;
+ function resize(){dpr=Math.min(devicePixelRatio||1,2);w=innerWidth;h=innerHeight;canvas.width=Math.round(w*dpr);canvas.height=Math.round(h*dpr);ctx.setTransform(dpr,0,0,dpr,0,0);}
+ resize();
+ const expanded=sides===100?results.flatMap(value=>[Math.floor((value-1)/10)*10,(value-1)%10]):results;
+ const count=Math.min(expanded.length,16),mesh=diceMesh(sides===100?10:sides);
+ const dice=expanded.slice(0,count).map((value,i)=>{
+  const spacing=Math.min(112,w/(count+1)),endX=(i-(count-1)/2)*spacing;
+  return {value,endX,x:endX+(Math.random()-.5)*w*.7,y:-100-Math.random()*200,z:40+Math.random()*100,
+    vx:(endX-(Math.random()-.5)*w*.4)*.012,vy:0,vz:0,
+    rx:Math.random()*6,ry:Math.random()*6,rz:Math.random()*6,
+    sx:6+Math.random()*9,sy:7+Math.random()*10,sz:5+Math.random()*9,mesh};
+ });
+ const start=performance.now(),duration=2400;
+ const rotate=(p,d)=>{
+  let [x,y,z]=p;let c=Math.cos(d.rx),s=Math.sin(d.rx);[y,z]=[y*c-z*s,y*s+z*c];
+  c=Math.cos(d.ry);s=Math.sin(d.ry);[x,z]=[x*c+z*s,-x*s+z*c];
+  c=Math.cos(d.rz);s=Math.sin(d.rz);return [x*c-y*s,x*s+y*c,z];
+ };
+ function render(now){
   if(seq!==diceThrowSequence||!overlay.isConnected)return;
-  overlay.querySelectorAll('.throw-die').forEach((die,i)=>{
-   die.classList.remove('tumbling');die.classList.add('settled');
-   if(keptIndex>=0&&i!==keptIndex)die.classList.add('lost');
-   die.querySelector('.throw-value').textContent=shown[i];
+  const elapsed=now-start,dt=Math.min(.034,(now-(render.prev||now))/1000);render.prev=now;
+  ctx.clearRect(0,0,w,h);
+  const floor=h*.76, radius=Math.max(28,Math.min(56,w/(count*2.7)));
+  ctx.fillStyle='#130e22aa';ctx.beginPath();ctx.ellipse(w/2,floor+radius*.65,Math.min(w*.46,450),radius*.48,0,0,Math.PI*2);ctx.fill();
+  const polygons=[];
+  dice.forEach((d,i)=>{
+   if(elapsed<duration){
+    d.vy+=1100*dt;d.y+=d.vy*dt;d.x+=d.vx*dt*60;d.z+=d.vz*dt*60;
+    const ground=floor-radius*1.15;
+    if(d.y>ground){d.y=ground;d.vy=-Math.abs(d.vy)*.38;d.vx*=.67;d.sx*=.72;d.sy*=.72;d.sz*=.72;}
+    if(d.x<radius||d.x>w-radius){d.x=Math.max(radius,Math.min(w-radius,d.x));d.vx*=-.55;}
+    d.rx+=d.sx*dt;d.ry+=d.sy*dt;d.rz+=d.sz*dt;
+   }else{d.x+=(w/2+d.endX-d.x)*.13;d.y+=(floor-radius*1.15-d.y)*.13;}
+   const verts=d.mesh.v.map(p=>{
+    const q=rotate(p,d),perspective=3.6/(3.6-q[2]*.7);
+    return [d.x+q[0]*radius*perspective,d.y+q[1]*radius*perspective,q[2],q];
+   });
+   d.mesh.f.forEach((face,j)=>{
+    const pts=face.map(idx=>verts[idx]),a=pts[0][3],b=pts[1][3],c=pts[2][3];
+    const u=b.map((v,k)=>v-a[k]),v=c.map((v,k)=>v-a[k]);
+    const normal=[u[1]*v[2]-u[2]*v[1],u[2]*v[0]-u[0]*v[2],u[0]*v[1]-u[1]*v[0]];
+    const center=pts.reduce((acc,p)=>acc.map((x,k)=>x+p[3][k]/pts.length),[0,0,0]);
+    if(normal.reduce((sum,n,k)=>sum+n*center[k],0)<0)normal.forEach((n,k)=>normal[k]=-n);
+    const len=Math.hypot(...normal)||1,brightness=Math.max(.16,Math.min(1,(normal[0]*-.4+normal[1]*-.5+normal[2]*.8)/len*.55+.48));
+    polygons.push({pts,depth:center[2]+d.z*.001,brightness,i,j});
+   });
   });
-  const result=document.createElement('div');result.className='throw-result';result.textContent='Result: '+total;
-  overlay.appendChild(result);
- },duration);
- window.setTimeout(()=>{if(seq===diceThrowSequence)overlay.remove()},duration+1800);
+  polygons.sort((a,b)=>a.depth-b.depth);
+  polygons.forEach(poly=>{
+   const {pts,brightness,i,j}=poly;
+   ctx.beginPath();pts.forEach((p,k)=>k?ctx.lineTo(p[0],p[1]):ctx.moveTo(p[0],p[1]));ctx.closePath();
+   ctx.fillStyle=`hsl(266 38% ${Math.round(15+brightness*29)}%)`;ctx.fill();
+   ctx.strokeStyle='#d7ae72';ctx.lineWidth=1.6;ctx.stroke();
+  });
+  dice.forEach((d,i)=>{
+   const landed=elapsed>=duration;
+   if(landed){
+    ctx.textAlign='center';ctx.textBaseline='middle';
+    ctx.font=`900 ${Math.round(radius*.65)}px system-ui`;ctx.shadowColor='#100619';ctx.shadowBlur=8;
+    ctx.fillStyle=keptIndex>=0&&i!==keptIndex?'#b0a4b9':'#ffe2a3';
+    ctx.fillText(String(d.value),d.x,d.y);ctx.shadowBlur=0;
+   }
+  });
+  if(elapsed>duration){
+   const text='Total: '+total;
+   ctx.textAlign='center';ctx.font='bold 22px system-ui';ctx.fillStyle='#ffe0a5';
+   ctx.fillText(text,w/2,Math.min(h-65,floor+100));
+  }
+  if(elapsed<duration+2100)activeDiceAnimation=requestAnimationFrame(render);
+  else {overlay.remove();activeDiceAnimation=null;}
+ }
+ activeDiceAnimation=requestAnimationFrame(render);
 }
 function roll(n,sides,bonus=0,title='Roll',applyEx=false){
  n=clamp(Math.floor(num(n,1)),1,20);sides=clamp(Math.floor(num(sides,20)),2,100);
