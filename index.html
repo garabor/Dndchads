@@ -699,15 +699,15 @@ function showScreenDice(sides,n,mode,title,bonus,penalty,onResolved){
   const x=Math.max(radius,Math.min(w-radius,targetX+Math.cos(angle)*travel));
   const y=Math.max(radius,Math.min(h-radius,targetY+Math.sin(angle)*travel));
   const heading=angle+Math.PI+(Math.random()-.5)*1.4;
-  const speed=3.0+Math.random()*2.6;
+  const speed=5.2+Math.random()*4.0;
   const vx=Math.cos(heading)*speed,vy=Math.sin(heading)*speed;
   // Rotation is coupled to planar travel (rolling rather than falling).
-  velocity[0]=vy/radius*1.2;velocity[1]=-vx/radius*1.2;velocity[2]=(Math.random()-.5)*.07;
+  velocity[0]=vy/Math.max(4,radius)*2.7;velocity[1]=-vx/Math.max(4,radius)*2.7;velocity[2]=(Math.random()-.5)*.13;
   return {soundStage:0,targetX,targetY,x,y,vx,vy,orientation,velocity,mesh,faceNumbers,landed:false,flash:0,fragments:null,contactCount:0,sleeping:false,quietFrames:0};
  });
  // Continuous orientation: the same rotation is used throughout flight and landing.
  const rotate=(p,d)=>{let [x,y,z]=p;let c=Math.cos(d.orientation[0]),sn=Math.sin(d.orientation[0]);[y,z]=[y*c-z*sn,y*sn+z*c];c=Math.cos(d.orientation[1]);sn=Math.sin(d.orientation[1]);[x,z]=[x*c+z*sn,-x*sn+z*c];c=Math.cos(d.orientation[2]);sn=Math.sin(d.orientation[2]);return [x*c-y*sn,x*sn+y*c,z]};
- const start=performance.now(),duration=5600;
+ const start=performance.now(),duration=4700;
  let resolved=false,results=[],keptIndex=-1,total=0,critical=null,shatterIndex=-1;
  const faceValue=(d)=>{
   let best=-Infinity,index=0;
@@ -727,8 +727,11 @@ function showScreenDice(sides,n,mode,title,bonus,penalty,onResolved){
   keptIndex=contested?(mode==='adv'?(results[0]>=results[1]?0:1):(results[0]<=results[1]?0:1)):-1;
   const used=contested?[results[keptIndex]]:results;
   total=used.reduce((a,b)=>a+b,0)+bonus+penalty;
-  critical=sides===20&&(keptIndex>=0?results[keptIndex]:results.length===1?results[0]:null);
-  shatterIndex=critical===1?(keptIndex>=0?keptIndex:0):-1;
+  // Critical effects always use the SELECTED die for advantage/disadvantage.
+  // An unselected 1 or 20 must never trigger a critical animation.
+  const selectedIndex=keptIndex>=0?keptIndex:(results.length===1?0:-1);
+  critical=sides===20&&selectedIndex>=0?results[selectedIndex]:null;
+  shatterIndex=critical===1?selectedIndex:-1;
   onResolved({results,keptIndex,total});
  };
  let lastFrame=start,soundAt=0;
@@ -743,19 +746,24 @@ function showScreenDice(sides,n,mode,title,bonus,penalty,onResolved){
    for(const d of dice){
     if(d.sleeping)continue;
     d.x+=d.vx*hstep;d.y+=d.vy*hstep;
+    // Orientation is integrated only from motion; prevents a hovering stationary spin.
     for(let k=0;k<3;k++)d.orientation[k]+=d.velocity[k]*hstep;
-    const linearDrag=Math.pow(.985,hstep),angularDrag=Math.pow(.983,hstep);
+    const linearDrag=Math.pow(.977,hstep),angularDrag=Math.pow(.977,hstep);
     d.vx*=linearDrag;d.vy*=linearDrag;
-    d.velocity=d.velocity.map(v=>v*angularDrag);
+    // No floating/spinning-in-place: rolling rotation follows actual tabletop displacement.
+    const coupledX=d.vy/Math.max(4,radius)*2.7,coupledY=-d.vx/Math.max(4,radius)*2.7;
+    d.velocity[0]=d.velocity[0]*.24+coupledX*.76;
+    d.velocity[1]=d.velocity[1]*.24+coupledY*.76;
+    d.velocity[2]*=angularDrag;
     // Screen boundaries are the edges of the tabletop, not a floor.
     if(d.x<radius){d.x=radius;d.vx=Math.abs(d.vx)*.32;}
     if(d.x>w-radius){d.x=w-radius;d.vx=-Math.abs(d.vx)*.32;}
     if(d.y<radius){d.y=radius;d.vy=Math.abs(d.vy)*.32;}
     if(d.y>h-radius){d.y=h-radius;d.vy=-Math.abs(d.vy)*.32;}
     const linearSpeed=Math.hypot(d.vx,d.vy),angularSpeed=Math.hypot(...d.velocity);
-    if(linearSpeed<.025&&angularSpeed<.003){
+    if(linearSpeed<.075&&angularSpeed<.018){
      d.quietFrames++;
-     if(d.quietFrames>=12){d.sleeping=true;d.vx=0;d.vy=0;d.velocity=[0,0,0];}
+     if(d.quietFrames>=9){d.sleeping=true;d.vx=0;d.vy=0;d.velocity=[0,0,0];}
     }else d.quietFrames=0;
    }
    // Collision impulses preserve the original multi-die rolling interaction.
@@ -800,29 +808,51 @@ function showScreenDice(sides,n,mode,title,bonus,penalty,onResolved){
   const faces=[];
   d.mesh.f.forEach((face,j)=>{const pts=face.map(idx=>verts[idx]),a=pts[0].q,b=pts[1].q,c=pts[2].q,u=b.map((v,k)=>v-a[k]),v=c.map((v,k)=>v-a[k]);let n=[u[1]*v[2]-u[2]*v[1],u[2]*v[0]-u[0]*v[2],u[0]*v[1]-u[1]*v[0]];const center=pts.reduce((p,q)=>p.map((x,k)=>x+q.q[k]/pts.length),[0,0,0]);if(n.reduce((z,x,k)=>z+x*center[k],0)<0)n=n.map(x=>-x);const nl=Math.hypot(...n)||1;n=n.map(x=>x/nl);if(n[2]<.045&&!breaking)return;faces.push({pts,n,j,depth:center[2],cx:pts.reduce((z,p)=>z+p.x,0)/pts.length,cy:pts.reduce((z,p)=>z+p.y,0)/pts.length});});
   faces.sort((a,b)=>a.depth-b.depth);
+  // A natural-20-piece shatter: irregular Voronoi-like radial wedges cut across
+  // the complete rendered die, NOT one fragment per numbered face.
   if(breaking&&!d.fragments){
-    d.fragments=d.mesh.f.map((_,j)=>({vx:(Math.random()-.5)*320,vy:-150-Math.random()*210,spin:(Math.random()-.5)*10,offset:Math.random()*6.28}));
-    diceSound('crack');
+    const seed=Math.random()*Math.PI*2;
+    const cuts=Array.from({length:20},(_,k)=>seed+k*Math.PI/10+(Math.random()-.5)*.13).sort((a,b)=>a-b);
+    d.fragments=cuts.map((angle,k)=>({angle,next:cuts[(k+1)%20]+(k===19?Math.PI*2:0),
+      inner:radius*(.12+Math.random()*.23),outer:radius*(1.05+Math.random()*.30),
+      vx:Math.cos(angle+.12)*(.65+Math.random()*.85)*radius*2.6,
+      vy:Math.sin(angle+.12)*(.65+Math.random()*.85)*radius*2.6,
+      spin:(Math.random()-.5)*8,shift:Math.random()*.18}));
   }
-  faces.forEach(f=>{
-   const bright=Math.max(.12,Math.min(1,.42+f.n[0]*-.24+f.n[1]*-.34+f.n[2]*.46));
-   const frag=breaking?d.fragments[f.j]:null;
-   if(breaking&&breakT>1.5)return;
-   ctx.save();
-   if(frag){
-     const t=Math.max(0,breakT);
-     ctx.globalAlpha=Math.max(0,1-t/1.5);
-     ctx.translate(f.cx+frag.vx*t,f.cy+frag.vy*t+440*t*t);
-     ctx.rotate(frag.spin*t);
-     ctx.translate(-f.cx,-f.cy);
-   }
-   drawCrystalFace(ctx,f,d,radius);
-   ctx.restore();
-  });
+  if(breaking){
+    const t=Math.max(0,breakT),fade=Math.max(0,1-t/1.65);
+    if(fade>0)d.fragments.forEach(frag=>{
+      const a=frag.angle,b=frag.next,mid=(a+b)/2;
+      ctx.save();ctx.globalAlpha=fade;
+      ctx.translate(d.x+frag.vx*t,d.y+frag.vy*t+110*t*t);
+      ctx.rotate(frag.spin*t);
+      ctx.translate(-d.x,-d.y);
+      ctx.beginPath();ctx.moveTo(d.x+Math.cos(a)*frag.inner,d.y+Math.sin(a)*frag.inner);
+      ctx.lineTo(d.x+Math.cos(a)*frag.outer,d.y+Math.sin(a)*frag.outer);
+      ctx.lineTo(d.x+Math.cos(mid)*frag.outer*1.12,d.y+Math.sin(mid)*frag.outer*1.12);
+      ctx.lineTo(d.x+Math.cos(b)*frag.outer,d.y+Math.sin(b)*frag.outer);
+      ctx.lineTo(d.x+Math.cos(b)*frag.inner,d.y+Math.sin(b)*frag.inner);
+      ctx.closePath();ctx.clip();
+      faces.forEach(f=>drawCrystalFace(ctx,f,d,radius));
+      ctx.restore();
+    });
+  }else faces.forEach(f=>drawCrystalFace(ctx,f,d,radius));
  });
  if(settled){finish();}
- if(settled&&(sides===100||sides===10)){ctx.textAlign='center';ctx.font='bold 16px system-ui';ctx.fillStyle='#f4d6a0';ctx.fillText(sides===100?'Percentile: '+results.join(', ')+' (00 + 0 = 100)':'d10: 0 on the die represents 10',w/2,Math.min(h-80,floor+radius*1.7));}
+ if(settled&&(sides===100||sides===10)){ctx.textAlign='center';ctx.font='bold 16px system-ui';ctx.fillStyle='#f4d6a0';ctx.fillText(sides===100?'Percentile: '+results.join(', ')+' (00 + 0 = 100)':'d10: 0 on the die represents 10',w/2,h-80);}
  if(settled){ctx.textAlign='center';ctx.font='bold 23px system-ui';ctx.fillStyle='#ffe2ae';ctx.fillText('Total: '+total,w/2,h-42);}
+ if(settled&&(critical===1||critical===20)){
+  const t=(elapsed-duration)/1000;
+  if(t<1.7){
+   ctx.save();ctx.textAlign='center';ctx.textBaseline='middle';
+   const alpha=Math.min(1,Math.max(0,t*6)) * Math.min(1,Math.max(0,(1.7-t)*3));
+   ctx.globalAlpha=alpha;ctx.font=`bold ${Math.min(38,Math.max(21,w*.065))}px Georgia,serif`;
+   ctx.shadowBlur=22;ctx.shadowColor=critical===20?'#ffe9a3':'#ff6b9e';
+   ctx.fillStyle=critical===20?'#ffe5a2':'#ff9db9';
+   ctx.fillText(critical===20?'NATURAL 20!':'NATURAL 1!',w/2,h*.17);
+   ctx.restore();
+  }
+ }
  if(settled&&critical===1){const t=(elapsed-duration)/1000;if(t<.4){ctx.fillStyle=`rgba(255,208,233,${Math.max(0,.17-t*.4)})`;ctx.fillRect(0,0,w,h);}}
  if(settled&&critical===20){
   const t=(elapsed-duration)/1000;
@@ -845,7 +875,9 @@ function roll(n,sides,bonus=0,title='Roll',applyEx=false){
   const used=contested?[results[keptIndex]]:results;
   drawAnimatedDice(sides,results,keptIndex);
   const modeLabel=contested?(mode==='adv'?'Advantage':'Disadvantage'):'Normal';
-  log.unshift(`<div class="die"><strong>${esc(title)}: ${total}</strong> <span class="muted">(${contested?'2d20 '+modeLabel:n+'d'+sides} [${results.join(', ')}]${contested?' → '+used[0]:''} ${fmt(bonus)}${penalty?' '+penalty+' exhaustion':''})</span></div>`);
+  const chosen=contested?results[keptIndex]:(sides===20&&n===1?results[0]:null);
+  const criticalTag=sides===20&&chosen===20?' <strong class="crit-success">NATURAL 20!</strong>':sides===20&&chosen===1?' <strong class="crit-fail">NATURAL 1!</strong>':'';
+  log.unshift(`<div class="die"><strong>${esc(title)}: ${total}</strong>${criticalTag} <span class="muted">(${contested?'2d20 '+modeLabel:n+'d'+sides} [${results.join(', ')}]${contested?' → '+used[0]:''} ${fmt(bonus)}${penalty?' '+penalty+' exhaustion':''})</span></div>`);
   log=log.slice(0,15);$('diceLog').innerHTML=log.join('');toast(`${title}: ${total}`);
  });
  // Results are deliberately unavailable until the actual rendered dice stop.
