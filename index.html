@@ -229,6 +229,55 @@ function diceMesh(sides){
 }
 let diceAudioContext=null;
 function diceSound(kind){try{const Audio=window.AudioContext||window.webkitAudioContext;if(!Audio)return;const ac=diceAudioContext||(diceAudioContext=new Audio());if(ac.state==='suspended')ac.resume();const t=ac.currentTime,osc=ac.createOscillator(),gain=ac.createGain(),filter=ac.createBiquadFilter();osc.type=kind==='thunder'?'sawtooth':'triangle';filter.type='lowpass';filter.frequency.value=kind==='thunder'?420:kind==='crack'?1700:750;osc.frequency.setValueAtTime(kind==='thunder'?90:kind==='crack'?420:130,t);osc.frequency.exponentialRampToValueAtTime(kind==='thunder'?38:kind==='crack'?75:58,t+.24);gain.gain.setValueAtTime(.0001,t);gain.gain.exponentialRampToValueAtTime(kind==='thunder'?.18:.09,t+.015);gain.gain.exponentialRampToValueAtTime(.0001,t+(kind==='thunder'?.65:.22));osc.connect(filter);filter.connect(gain);gain.connect(ac.destination);osc.start(t);osc.stop(t+(kind==='thunder'?.7:.25));}catch(e){}}
+// Natural 20 storm: branching, persistent bolts with realistic layered glow.
+function seededStorm(seed){let v=(seed>>>0)||1;return ()=>{v=(Math.imul(1664525,v)+1013904223)>>>0;return v/4294967296;};}
+function makeStormBolts(w,h){
+ const rand=seededStorm(Math.floor(Math.random()*0xFFFFFFFF));
+ const bolts=[];
+ for(let i=0;i<4;i++){
+  const startX=w*(.15+rand()*.7),endY=h*(.52+rand()*.35),step=Math.max(12,h/22);
+  let x=startX,y=-15;const pts=[[x,y]];
+  while(y<endY){y+=step*(.75+rand()*.55);x+=(rand()-.5)*Math.min(95,w*.19);x=Math.max(15,Math.min(w-15,x));pts.push([x,y]);}
+  const branches=[];
+  for(let k=2;k<pts.length-2;k++)if(rand()<.26){const fork=[pts[k].slice()];let bx=pts[k][0],by=pts[k][1],dir=rand()<.5?-1:1;for(let j=0;j<3+Math.floor(rand()*5);j++){bx+=dir*(9+rand()*22)+(rand()-.5)*14;by+=step*(.7+rand()*.6);fork.push([bx,by]);}branches.push(fork);}
+  bolts.push({pts,branches,at:i===0?0:i===1?.34:i===2?.73:1.08,life:.19+rand()*.16});
+ }
+ return bolts;
+}
+function drawStorm(ctx,w,h,t,bolts){
+ ctx.save();
+ let flash=0;
+ for(const bolt of bolts){
+  const age=t-bolt.at;if(age<0||age>bolt.life+.14)continue;
+  const pulse=Math.max(0,1-age/(bolt.life+.14));
+  const flicker=age<.06?1:age<.12?.26:age<.18?.85:.35;
+  const alpha=pulse*flicker;
+  flash=Math.max(flash,alpha);
+  const stroke=(points,width,color,blur)=>{ctx.beginPath();points.forEach((p,i)=>i?ctx.lineTo(p[0],p[1]):ctx.moveTo(p[0],p[1]));ctx.lineWidth=width;ctx.strokeStyle=color;ctx.shadowColor='#9abaff';ctx.shadowBlur=blur;ctx.stroke();};
+  ctx.globalAlpha=alpha*.32;stroke(bolt.pts,19,'#637fff',40);
+  ctx.globalAlpha=alpha*.72;stroke(bolt.pts,8,'#a6baff',20);
+  ctx.globalAlpha=alpha;stroke(bolt.pts,2.2,'#f8fdff',8);
+  for(const branch of bolt.branches){ctx.globalAlpha=alpha*.45;stroke(branch,4,'#9cb4ff',13);ctx.globalAlpha=alpha*.9;stroke(branch,1.2,'#eaf6ff',4);}
+ }
+ if(flash){ctx.globalAlpha=Math.min(.27,flash*.23);ctx.fillStyle='#dbe7ff';ctx.fillRect(0,0,w,h);}
+ ctx.restore();
+}
+// Procedural rumbling thunder: low-passed noise, delayed crack and long decay.
+function stormThunder(){try{
+ const Audio=window.AudioContext||window.webkitAudioContext;if(!Audio)return;
+ const ac=diceAudioContext||(diceAudioContext=new Audio());if(ac.state==='suspended')ac.resume();
+ const sr=ac.sampleRate,duration=3.4,len=Math.floor(sr*duration),buffer=ac.createBuffer(1,len,sr),data=buffer.getChannelData(0);
+ let previous=0;for(let i=0;i<len;i++){const white=Math.random()*2-1;previous=(previous*.93)+(white*.07);data[i]=previous*.85+white*.15;}
+ const source=ac.createBufferSource();source.buffer=buffer;
+ const low=ac.createBiquadFilter();low.type='lowpass';low.frequency.value=440;low.Q.value=.45;
+ const gain=ac.createGain(),now=ac.currentTime+.06;
+ gain.gain.setValueAtTime(.0001,now);gain.gain.exponentialRampToValueAtTime(.38,now+.045);
+ gain.gain.exponentialRampToValueAtTime(.14,now+.35);gain.gain.exponentialRampToValueAtTime(.035,now+1.4);gain.gain.exponentialRampToValueAtTime(.0001,now+3.35);
+ source.connect(low);low.connect(gain);gain.connect(ac.destination);source.start(now);source.stop(now+duration);
+ const crack=ac.createOscillator(),cg=ac.createGain();crack.type='sawtooth';crack.frequency.setValueAtTime(95,now);crack.frequency.exponentialRampToValueAtTime(37,now+.55);
+ cg.gain.setValueAtTime(.0001,now);cg.gain.exponentialRampToValueAtTime(.095,now+.02);cg.gain.exponentialRampToValueAtTime(.0001,now+.75);
+ crack.connect(cg);cg.connect(ac.destination);crack.start(now);crack.stop(now+.8);
+ }catch(e){}}
 function showScreenDice(sides,results,keptIndex,title,total){
  const seq=++diceThrowSequence;if(activeDiceAnimation)cancelAnimationFrame(activeDiceAnimation);
  document.getElementById('diceThrowOverlay')?.remove();
@@ -246,12 +295,13 @@ function showScreenDice(sides,results,keptIndex,title,total){
   const face=mesh.f[faceIndex];let normal=[0,0,0];face.forEach(idx=>mesh.v[idx].forEach((x,k)=>normal[k]+=x/face.length));const len=Math.hypot(...normal)||1;normal=normal.map(x=>x/len);
   // Rotate the selected numbered face toward the camera at the end of the throw.
   const axis=[normal[1],-normal[0],0],axisLen=Math.hypot(...axis);const angle=Math.acos(Math.max(-1,Math.min(1,normal[2])));
-  return {value,targetX,x:targetX+(Math.random()-.5)*w*.5,y:-radius*3-Math.random()*100,vy:0,spin:[Math.random()*6,Math.random()*6,Math.random()*6],axis:axisLen?axis.map(x=>x/axisLen):[1,0,0],angle:normal[2]<-.999?Math.PI:angle,mesh,faceIndex,landed:false,flash:0};
+  return {value,targetX,x:targetX+(Math.random()-.5)*w*.5,y:-radius*3-Math.random()*100,vy:0,spin:[Math.random()*6,Math.random()*6,Math.random()*6],axis:axisLen?axis.map(x=>x/axisLen):[1,0,0],angle:normal[2]<-.999?Math.PI:angle,mesh,faceIndex,landed:false,flash:0,fragments:null};
  });
  const rotateAxis=(p,axis,angle)=>{const c=Math.cos(angle),sn=Math.sin(angle),dot=p.reduce((a,x,i)=>a+x*axis[i],0),cross=[axis[1]*p[2]-axis[2]*p[1],axis[2]*p[0]-axis[0]*p[2],axis[0]*p[1]-axis[1]*p[0]];return p.map((x,i)=>x*c+cross[i]*sn+axis[i]*dot*(1-c));};
  const rotate=(p,d,settle)=>{if(settle)return rotateAxis(p,d.axis,d.angle);let [x,y,z]=p;let c=Math.cos(d.spin[0]),sn=Math.sin(d.spin[0]);[y,z]=[y*c-z*sn,y*sn+z*c];c=Math.cos(d.spin[1]);sn=Math.sin(d.spin[1]);[x,z]=[x*c+z*sn,-x*sn+z*c];c=Math.cos(d.spin[2]);sn=Math.sin(d.spin[2]);return [x*c-y*sn,x*sn+y*c,z]};
  const start=performance.now(),duration=1900,critical=sides===20&&(keptIndex>=0?results[keptIndex]:results.length===1?results[0]:null);
- const shards=Array.from({length:42},(_,i)=>({angle:Math.random()*Math.PI*2,speed:100+Math.random()*330,size:4+Math.random()*12,rot:Math.random()*6}));
+ // Each broken fragment is an actual polygon from the die's own 3D mesh.
+ const shatterIndex=critical===1?(keptIndex>=0?keptIndex:0):-1;
  let soundAt=0;
  diceSound('roll');
  function frame(now){if(seq!==diceThrowSequence||!overlay.isConnected)return;const elapsed=now-start,progress=Math.min(1,elapsed/duration),settled=progress>=1;
@@ -260,21 +310,51 @@ function showScreenDice(sides,results,keptIndex,title,total){
  dice.forEach((d,i)=>{
   if(!settled){const t=Math.min(1,progress*1.25);d.x+=(d.targetX-d.x)*.08;d.y=-radius*2+(floor-radius*.95+radius*2)*(1-Math.pow(1-t,2));d.y-=Math.abs(Math.sin(t*11))*radius*.6*(1-t);d.spin=d.spin.map((v,k)=>v+(k+1)*.085*(1-t*.8));if(t>.48&&now-soundAt>190){diceSound('bounce');soundAt=now;}}
   else{d.x+=(d.targetX-d.x)*.12;d.y+=(floor-radius*.95-d.y)*.12;}
+  const breaking=settled&&critical===1&&i===shatterIndex;
+  const breakT=breaking?(elapsed-duration)/1000:0;
   ctx.fillStyle='#03020b80';ctx.beginPath();ctx.ellipse(d.x,floor+radius*.65,radius*1.04,radius*.26,0,0,Math.PI*2);ctx.fill();
   const verts=d.mesh.v.map(p=>{const q=rotate(p,d,settled),perspective=3.7/(3.7-q[2]*.65);return {x:d.x+q[0]*radius*perspective,y:d.y+q[1]*radius*perspective,z:q[2],q};});
   const faces=[];
-  d.mesh.f.forEach((face,j)=>{const pts=face.map(idx=>verts[idx]),a=pts[0].q,b=pts[1].q,c=pts[2].q,u=b.map((v,k)=>v-a[k]),v=c.map((v,k)=>v-a[k]);let n=[u[1]*v[2]-u[2]*v[1],u[2]*v[0]-u[0]*v[2],u[0]*v[1]-u[1]*v[0]];const center=pts.reduce((p,q)=>p.map((x,k)=>x+q.q[k]/pts.length),[0,0,0]);if(n.reduce((z,x,k)=>z+x*center[k],0)<0)n=n.map(x=>-x);const nl=Math.hypot(...n)||1;n=n.map(x=>x/nl);if(n[2]<.045)return;faces.push({pts,n,j,depth:center[2],cx:pts.reduce((z,p)=>z+p.x,0)/pts.length,cy:pts.reduce((z,p)=>z+p.y,0)/pts.length});});
+  d.mesh.f.forEach((face,j)=>{const pts=face.map(idx=>verts[idx]),a=pts[0].q,b=pts[1].q,c=pts[2].q,u=b.map((v,k)=>v-a[k]),v=c.map((v,k)=>v-a[k]);let n=[u[1]*v[2]-u[2]*v[1],u[2]*v[0]-u[0]*v[2],u[0]*v[1]-u[1]*v[0]];const center=pts.reduce((p,q)=>p.map((x,k)=>x+q.q[k]/pts.length),[0,0,0]);if(n.reduce((z,x,k)=>z+x*center[k],0)<0)n=n.map(x=>-x);const nl=Math.hypot(...n)||1;n=n.map(x=>x/nl);if(n[2]<.045&&!breaking)return;faces.push({pts,n,j,depth:center[2],cx:pts.reduce((z,p)=>z+p.x,0)/pts.length,cy:pts.reduce((z,p)=>z+p.y,0)/pts.length});});
   faces.sort((a,b)=>a.depth-b.depth);
-  faces.forEach(f=>{const bright=Math.max(.12,Math.min(1,.42+f.n[0]*-.24+f.n[1]*-.34+f.n[2]*.46));ctx.beginPath();f.pts.forEach((p,k)=>k?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y));ctx.closePath();ctx.fillStyle=`hsl(268 45% ${Math.round(15+bright*31)}%)`;ctx.fill();ctx.strokeStyle='#e7c48c';ctx.lineWidth=1.7;ctx.stroke();
-   // Number the actual face, rather than stamping a result over the whole model.
-   const number=f.j===d.faceIndex?d.value:(f.j%Math.max(2,sides))+1;
-   if(f.n[2]>.35){ctx.textAlign='center';ctx.textBaseline='middle';ctx.font=`800 ${Math.max(11,Math.round(radius*(f.n[2]>.85?.45:.30)))}px system-ui`;ctx.fillStyle='#fce6b6';ctx.shadowColor='#000';ctx.shadowBlur=3;ctx.fillText(String(number),f.cx,f.cy);ctx.shadowBlur=0;}
+  if(breaking&&!d.fragments){
+    d.fragments=d.mesh.f.map((_,j)=>({vx:(Math.random()-.5)*320,vy:-150-Math.random()*210,spin:(Math.random()-.5)*10,offset:Math.random()*6.28}));
+    diceSound('crack');
+  }
+  faces.forEach(f=>{
+   const bright=Math.max(.12,Math.min(1,.42+f.n[0]*-.24+f.n[1]*-.34+f.n[2]*.46));
+   const frag=breaking?d.fragments[f.j]:null;
+   if(breaking&&breakT>1.5)return;
+   ctx.save();
+   if(frag){
+     const t=Math.max(0,breakT);
+     ctx.globalAlpha=Math.max(0,1-t/1.5);
+     ctx.translate(f.cx+frag.vx*t,f.cy+frag.vy*t+440*t*t);
+     ctx.rotate(frag.spin*t);
+     ctx.translate(-f.cx,-f.cy);
+   }
+   ctx.beginPath();f.pts.forEach((p,k)=>k?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y));ctx.closePath();
+   ctx.fillStyle=`hsl(268 45% ${Math.round(15+bright*31)}%)`;ctx.fill();ctx.strokeStyle='#e7c48c';ctx.lineWidth=1.7;ctx.stroke();
+   // Labels belong to individual polygon faces and move with the fragments.
+   const number=f.j===d.faceIndex?d.value:(f.j+1);
+   if(f.n[2]>.25){
+     const area=Math.abs(f.pts.reduce((sum,p,k)=>{const q=f.pts[(k+1)%f.pts.length];return sum+p.x*q.y-q.x*p.y;},0))*.5;
+     const fontSize=Math.max(9,Math.min(radius*.42,Math.sqrt(area)*.45));
+     ctx.clip();ctx.textAlign='center';ctx.textBaseline='middle';ctx.font=`800 ${fontSize}px system-ui`;ctx.fillStyle='#ffe9bf';ctx.shadowColor='#080412';ctx.shadowBlur=3;
+     ctx.fillText(String(number),f.cx,f.cy);ctx.shadowBlur=0;
+   }
+   ctx.restore();
   });
  });
  if(settled){ctx.textAlign='center';ctx.font='bold 23px system-ui';ctx.fillStyle='#ffe2ae';ctx.fillText('Total: '+total,w/2,Math.min(h-54,floor+radius*2.3));}
- if(settled&&critical===1){const t=(elapsed-duration)/1000;if(t<1.45){if(!frame.broke){diceSound('crack');frame.broke=true;}const target=dice[keptIndex>=0?keptIndex:0];shards.forEach(p=>{const dist=p.speed*t,alpha=Math.max(0,1-t/1.45);ctx.save();ctx.translate(target.x+Math.cos(p.angle)*dist,target.y+Math.sin(p.angle)*dist+120*t*t);ctx.rotate(p.rot+t*6);ctx.globalAlpha=alpha;ctx.fillStyle='#ac78d5';ctx.strokeStyle='#f1c887';ctx.beginPath();ctx.moveTo(-p.size/2,-p.size/2);ctx.lineTo(p.size,0);ctx.lineTo(0,p.size);ctx.closePath();ctx.fill();ctx.stroke();ctx.restore();});ctx.fillStyle=`rgba(255,215,230,${Math.max(0,.18-t*.16)})`;ctx.fillRect(0,0,w,h);}}
- if(settled&&critical===20){const t=(elapsed-duration)/1000;if(t<1.6){if(!frame.thunder){diceSound('thunder');frame.thunder=true;}ctx.save();ctx.globalAlpha=Math.max(0,1-t/1.6);ctx.strokeStyle='#d9e9ff';ctx.shadowColor='#a8b9ff';ctx.shadowBlur=22;ctx.lineWidth=3.5;for(let k=0;k<5;k++){let x=(k+.5)*w/5,py=-10;ctx.beginPath();ctx.moveTo(x,py);for(let j=0;j<8;j++){x+=(Math.sin(j*13+k*8+Math.floor(t*12))*27);py+=h/8;ctx.lineTo(x,py);}ctx.stroke();}ctx.fillStyle=`rgba(188,209,255,${.10*Math.abs(Math.sin(t*34))})`;ctx.fillRect(0,0,w,h);ctx.restore();}}
- if(elapsed<duration+1900)activeDiceAnimation=requestAnimationFrame(frame);else{overlay.remove();activeDiceAnimation=null;}
+ if(settled&&critical===1){const t=(elapsed-duration)/1000;if(t<.4){ctx.fillStyle=`rgba(255,208,233,${Math.max(0,.17-t*.4)})`;ctx.fillRect(0,0,w,h);}}
+ if(settled&&critical===20){
+  const t=(elapsed-duration)/1000;
+  if(t<1.7){if(!frame.stormBolts){frame.stormBolts=makeStormBolts(w,h);stormThunder();}
+   drawStorm(ctx,w,h,t,frame.stormBolts);
+  }
+ }
+ if(elapsed<duration+(critical===20?3600:1900))activeDiceAnimation=requestAnimationFrame(frame);else{overlay.remove();activeDiceAnimation=null;}
  }
  activeDiceAnimation=requestAnimationFrame(frame);
 }
