@@ -370,7 +370,7 @@ function drawCrystalFace(ctx,f,d,radius){
      if((cx-midX)*vx+(cy-midY)*vy<0){vx=-vx;vy=-vy;}
      // The fixed edge may be reversed as the die tumbles; don't flip it mid-frame.
      const compression=Math.min(1,Math.max(.42,n[2]));
-     const label=j===d.faceIndex?d.value:j+1;
+     const label=d.faceNumbers[j];
      const fontSize=Math.min(radius*.42,side*.47,edgeLength*.7);
      const text=String(label);
      ctx.save();ctx.translate(cx,cy);
@@ -400,11 +400,15 @@ function showScreenDice(sides,results,keptIndex,title,total){
  const count=Math.min(expanded.length,12),mesh=diceMesh(sides===100?10:sides),radius=Math.max(24,Math.min(59,w/(count*2.6))),floor=h*.72;
  const dice=expanded.slice(0,count).map((value,i)=>{
   const targetX=w/2+(i-(count-1)/2)*Math.min(115,w/(count+1));
-  const faceIndex=(Math.max(1,value)-1)%mesh.f.length;
+  // Immutable number-to-face mapping. A polygon's label never changes during the roll.
+  const isPercentile=sides===100&&i%2===0;
+  const faceNumbers=Array.from({length:mesh.f.length},(_,j)=>
+    sides===100?(isPercentile?j*10:j):j+1);
+  const faceIndex=sides===100?(isPercentile?Math.floor(value/10):value):Math.max(0,Math.min(mesh.f.length-1,value-1));
   const face=mesh.f[faceIndex];let normal=[0,0,0];face.forEach(idx=>mesh.v[idx].forEach((x,k)=>normal[k]+=x/face.length));const len=Math.hypot(...normal)||1;normal=normal.map(x=>x/len);
   // Rotate the selected numbered face toward the camera at the end of the throw.
   const axis=[normal[1],-normal[0],0],axisLen=Math.hypot(...axis);const angle=Math.acos(Math.max(-1,Math.min(1,normal[2])));
-  return {value,targetX,x:targetX+(Math.random()-.5)*w*.5,y:-radius*3-Math.random()*100,vy:0,spin:[Math.random()*6,Math.random()*6,Math.random()*6],axis:axisLen?axis.map(x=>x/axisLen):[1,0,0],angle:normal[2]<-.999?Math.PI:angle,mesh,faceIndex,landed:false,flash:0,fragments:null};
+  return {value,targetX,x:targetX+(Math.random()-.5)*w*.5,y:-radius*3-Math.random()*100,vy:0,spin:[Math.random()*6,Math.random()*6,Math.random()*6],axis:axisLen?axis.map(x=>x/axisLen):[1,0,0],angle:normal[2]<-.999?Math.PI:angle,mesh,faceIndex,faceNumbers,landed:false,flash:0,fragments:null};
  });
  const rotateAxis=(p,axis,angle)=>{const c=Math.cos(angle),sn=Math.sin(angle),dot=p.reduce((a,x,i)=>a+x*axis[i],0),cross=[axis[1]*p[2]-axis[2]*p[1],axis[2]*p[0]-axis[0]*p[2],axis[0]*p[1]-axis[1]*p[0]];return p.map((x,i)=>x*c+cross[i]*sn+axis[i]*dot*(1-c));};
  const rotate=(p,d,settle)=>{if(settle)return rotateAxis(p,d.axis,d.angle);let [x,y,z]=p;let c=Math.cos(d.spin[0]),sn=Math.sin(d.spin[0]);[y,z]=[y*c-z*sn,y*sn+z*c];c=Math.cos(d.spin[1]);sn=Math.sin(d.spin[1]);[x,z]=[x*c+z*sn,-x*sn+z*c];c=Math.cos(d.spin[2]);sn=Math.sin(d.spin[2]);return [x*c-y*sn,x*sn+y*c,z]};
