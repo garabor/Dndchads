@@ -699,10 +699,10 @@ function showScreenDice(sides,n,mode,title,bonus,penalty,onResolved){
   const x=Math.max(radius,Math.min(w-radius,targetX+Math.cos(angle)*travel));
   const y=Math.max(radius,Math.min(h-radius,targetY+Math.sin(angle)*travel));
   const heading=angle+Math.PI+(Math.random()-.5)*1.4;
-  const speed=(3.4+Math.random()*2.8)*7; // Sevenfold initial throw momentum (v7.2).
+  const speed=(3.4+Math.random()*2.8)*6.25; // Slightly below v7.2 launch impulse.
   const vx=Math.cos(heading)*speed,vy=Math.sin(heading)*speed;
   // Rotation is coupled to planar travel (rolling rather than falling).
-  velocity[0]=vy/Math.max(4,radius)*.95;velocity[1]=-vx/Math.max(4,radius)*.95;velocity[2]=(Math.random()-.5)*.003;
+  velocity[0]=vy/Math.max(4,radius)*1.55;velocity[1]=-vx/Math.max(4,radius)*1.55;velocity[2]=(Math.random()-.5)*.003;
   return {soundStage:0,targetX,targetY,x,y,vx,vy,orientation,velocity,mesh,faceNumbers,landed:false,flash:0,fragments:null,contactCount:0,sleeping:false,quietFrames:0};
  });
  // Continuous orientation: the same rotation is used throughout flight and landing.
@@ -755,7 +755,7 @@ function showScreenDice(sides,n,mode,title,bonus,penalty,onResolved){
     const linearDrag=Math.pow(resistance,hstep);
     d.vx*=linearDrag;d.vy*=linearDrag;
     // No floating/spinning-in-place: rolling rotation follows actual tabletop displacement.
-    const coupledX=d.vy/Math.max(4,radius)*.95,coupledY=-d.vx/Math.max(4,radius)*.95;
+    const coupledX=d.vy/Math.max(4,radius)*1.55,coupledY=-d.vx/Math.max(4,radius)*1.55;
     d.velocity[0]=coupledX;
     d.velocity[1]=coupledY;
     d.velocity[2]*=Math.pow(.89,hstep);
@@ -830,9 +830,16 @@ function showScreenDice(sides,n,mode,title,bonus,penalty,onResolved){
     const t=Math.max(0,breakT-2),fade=Math.max(0,1-t/1.6);
     if(breakT<2){
       faces.forEach(f=>drawCrystalFace(ctx,f,d,radius));
-      ctx.save();ctx.beginPath();
-      faces.forEach(f=>{ctx.moveTo(f.pts[0].x,f.pts[0].y);for(let q=1;q<f.pts.length;q++)ctx.lineTo(f.pts[q].x,f.pts[q].y);ctx.closePath();});
-      ctx.clip();
+      ctx.save();
+      // Clip to the outer silhouette, not a compound path of overlapping faces:
+      // the old nonzero-winding face clip could hide the cracks entirely.
+      const silhouette=verts.map(p=>({x:p.x,y:p.y})).sort((a,b)=>a.x-b.x||a.y-b.y);
+      const cross=(o,a,b)=>(a.x-o.x)*(b.y-o.y)-(a.y-o.y)*(b.x-o.x);
+      const lower=[],upper=[];
+      for(const p of silhouette){while(lower.length>=2&&cross(lower[lower.length-2],lower[lower.length-1],p)<=0)lower.pop();lower.push(p);}
+      for(const p of silhouette.slice().reverse()){while(upper.length>=2&&cross(upper[upper.length-2],upper[upper.length-1],p)<=0)upper.pop();upper.push(p);}
+      const hull=lower.slice(0,-1).concat(upper.slice(0,-1));
+      if(hull.length){ctx.beginPath();ctx.moveTo(hull[0].x,hull[0].y);for(const p of hull.slice(1))ctx.lineTo(p.x,p.y);ctx.closePath();ctx.clip();}
       // Earthquake-style fracture: a dark, uneven fault opens first, then
       // pale crystalline edges and smaller branching cracks spread outward.
       // Fixed seeded geometry prevents cracks from flickering between frames.
@@ -868,19 +875,20 @@ function showScreenDice(sides,n,mode,title,bonus,penalty,onResolved){
         return true;
       };
       d.quakeFaults.forEach((fault,k)=>{
-        const growth=Math.max(0,Math.min(1,(crackPhase-k*.085)*1.42));
+        const growth=Math.max(0,Math.min(1,(crackPhase-k*.055)*1.7));
         if(!growth)return;
         if(trace(fault.points,growth)){
           ctx.lineJoin='round';ctx.lineCap='round';
           // Wide dark rift, with a bright uneven broken-stone edge.
-          ctx.strokeStyle='#100719';ctx.lineWidth=radius*(.045+.095*growth);ctx.shadowBlur=0;ctx.stroke();
-          ctx.strokeStyle='#cdb8e1';ctx.lineWidth=radius*.029;ctx.shadowColor='#e7c4ff';ctx.shadowBlur=radius*.11;ctx.stroke();
+          ctx.shadowBlur=0;ctx.strokeStyle='#08040d';ctx.lineWidth=Math.max(2.8,radius*(.095+.13*growth));ctx.stroke();
+          ctx.strokeStyle='#fff0c5';ctx.lineWidth=Math.max(1.1,radius*.048);ctx.shadowColor='#fff0c5';ctx.shadowBlur=radius*.15;ctx.stroke();
+          ctx.shadowBlur=0;ctx.strokeStyle='#26102f';ctx.lineWidth=Math.max(.8,radius*.022);ctx.stroke();
         }
         fault.branches.forEach((branch,j)=>{
           const branchGrowth=Math.max(0,Math.min(1,(growth-(.28+j*.18))*2.3));
           if(!trace(branch,branchGrowth))return;
-          ctx.shadowBlur=0;ctx.strokeStyle='#190c26';ctx.lineWidth=radius*(.035-j*.005);ctx.stroke();
-          ctx.strokeStyle='#b9a2ce';ctx.lineWidth=Math.max(.7,radius*.013);ctx.stroke();
+          ctx.shadowBlur=0;ctx.strokeStyle='#08040d';ctx.lineWidth=Math.max(2,radius*(.065-j*.006));ctx.stroke();
+          ctx.strokeStyle='#ffe6b5';ctx.lineWidth=Math.max(1,radius*.029);ctx.stroke();
         });
       });
       // Dust flecks and a restrained tremor reinforce the stone splitting.
