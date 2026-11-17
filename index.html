@@ -352,37 +352,37 @@ function drawCrystalFace(ctx,f,d,radius){
  const sheen=ctx.createRadialGradient(minX+(maxX-minX)*.28,minY+(maxY-minY)*.22,1,cx,cy,Math.max(12,radius*.95));
  sheen.addColorStop(0,`rgba(255,235,215,${light*.19})`);sheen.addColorStop(1,'rgba(255,235,215,0)');
  ctx.fillStyle=sheen;ctx.fillRect(minX,minY,maxX-minX,maxY-minY);
- // Place the numeral on the *actual polygon plane*, not over the screen center.
- // Affine projection of two in-plane basis vectors produces a slanted/rotating glyph.
- if(n[2]>.12){
-   const world=d.mesh.v,face=d.mesh.f[j];
-   const centroid=face.reduce((a,id)=>a.map((x,k)=>x+world[id][k]/face.length),[0,0,0]);
-   const edge=[world[face[1]][0]-world[face[0]][0],world[face[1]][1]-world[face[0]][1],world[face[1]][2]-world[face[0]][2]];
-   const length=Math.hypot(...edge)||1;const ux=edge.map(x=>x/length);
-   const dot=ux.reduce((sum,x,k)=>sum+x*centroid[k],0);
-   const projected=centroid.map((x,k)=>x-ux[k]*dot);
-   const pl=Math.hypot(...projected)||1;
-   const vy=projected.map(x=>x/pl);
-   // Use screen-projected directions from the actual rotating mesh vertices.
-   // The polygon's longest edge determines baseline and centroid-to-edge determines vertical.
-   let best=0,bestLength=0;
-   for(let k=0;k<pts.length;k++){const a=pts[k],b=pts[(k+1)%pts.length];const l=Math.hypot(b.x-a.x,b.y-a.y);if(l>bestLength){bestLength=l;best=k;}}
-   const a=pts[best],b=pts[(best+1)%pts.length];
-   let ax=b.x-a.x,ay=b.y-a.y,al=Math.hypot(ax,ay)||1;ax/=al;ay/=al;
-   // Keep digits upright to a reader, but retain perspective squashing and face tilt.
-   if(ax<0){ax=-ax;ay=-ay;}
-   let bx=-ay,by=ax;
-   const mid={x:(a.x+b.x)/2,y:(a.y+b.y)/2};
-   if((cx-mid.x)*bx+(cy-mid.y)*by<0){bx=-bx;by=-by;}
-   const faceArea=Math.abs(pts.reduce((sum,p,k)=>{const q=pts[(k+1)%pts.length];return sum+p.x*q.y-q.x*p.y;},0))*.5;
-   const height=Math.max(10,Math.min(radius*.56,Math.sqrt(faceArea)*.62));
-   const compression=Math.max(.23,Math.min(1,Math.abs(n[2])*.95+.1));
-   const label=j===d.faceIndex?d.value:j+1;
-   ctx.save();ctx.translate(cx,cy);ctx.transform(ax,ay,bx*compression,by*compression,0,0);
-   ctx.textAlign='center';ctx.textBaseline='middle';ctx.font=`700 ${height}px Georgia,serif`;
-   ctx.shadowColor='#080310';ctx.shadowBlur=2;ctx.lineWidth=Math.max(1,height*.09);
-   ctx.strokeStyle='#21102f';ctx.strokeText(String(label),0,0);
-   ctx.fillStyle='#f5deb3';ctx.fillText(String(label),0,0);ctx.restore();
+ // Stable face-local typography: fixed geometric edge, no longest-edge switching.
+ // Near edge-on faces are intentionally left unnumbered to avoid flickering.
+ if(n[2]>.32 && pts.length>=3){
+   const face=d.mesh.f[j], world=d.mesh.v;
+   const p0=pts[0],p1=pts[1];
+   let ux=p1.x-p0.x,uy=p1.y-p0.y;
+   const edgeLength=Math.hypot(ux,uy);
+   const area=Math.abs(pts.reduce((sum,p,k)=>{const q=pts[(k+1)%pts.length];return sum+p.x*q.y-q.x*p.y;},0))*.5;
+   const side=Math.sqrt(area);
+   if(edgeLength>5 && side>10){
+     ux/=edgeLength;uy/=edgeLength;
+     // The second axis is perpendicular to the same edge every frame.
+     // Using a fixed edge prevents the digits from jumping between orientations.
+     let vx=-uy,vy=ux;
+     const midX=(p0.x+p1.x)/2,midY=(p0.y+p1.y)/2;
+     if((cx-midX)*vx+(cy-midY)*vy<0){vx=-vx;vy=-vy;}
+     // The fixed edge may be reversed as the die tumbles; don't flip it mid-frame.
+     const compression=Math.min(1,Math.max(.42,n[2]));
+     const label=j===d.faceIndex?d.value:j+1;
+     const fontSize=Math.min(radius*.42,side*.47,edgeLength*.7);
+     const text=String(label);
+     ctx.save();ctx.translate(cx,cy);
+     ctx.transform(ux,uy,vx*compression,vy*compression,0,0);
+     ctx.textAlign='center';ctx.textBaseline='middle';
+     ctx.font=`bold ${fontSize}px Georgia,serif`;
+     const maxTextWidth=Math.max(8,side*.8);
+     ctx.lineJoin='round';ctx.lineWidth=Math.max(.7,fontSize*.085);
+     ctx.strokeStyle='rgba(25,10,39,.94)';ctx.strokeText(text,0,0,maxTextWidth);
+     ctx.fillStyle='#f8e7c5';ctx.fillText(text,0,0,maxTextWidth);
+     ctx.restore();
+   }
  }
  ctx.restore();
  path();ctx.strokeStyle=`rgba(244,208,151,${.48+light*.42})`;ctx.lineWidth=Math.max(1.1,radius*.026);ctx.stroke();
@@ -395,7 +395,7 @@ function showScreenDice(sides,results,keptIndex,title,total){
  const heading=document.createElement('div');heading.className='throw-caption';heading.textContent=title+' · 3D Dice Roll';overlay.appendChild(heading);
  const canvas=document.createElement('canvas');canvas.style.cssText='width:100%;height:100%;display:block';overlay.appendChild(canvas);document.body.appendChild(overlay);
  const ctx=canvas.getContext('2d');if(!ctx){overlay.remove();return;}
- const dpr=Math.min(devicePixelRatio||1,2),w=innerWidth,h=innerHeight;canvas.width=w*dpr;canvas.height=h*dpr;ctx.setTransform(dpr,0,0,dpr,0,0);
+ const dpr=Math.min(devicePixelRatio||1,3),w=innerWidth,h=innerHeight;canvas.width=w*dpr;canvas.height=h*dpr;ctx.setTransform(dpr,0,0,dpr,0,0);
  const expanded=sides===100?results.flatMap(value=>[Math.floor((value-1)/10)*10,(value-1)%10]):results;
  const count=Math.min(expanded.length,12),mesh=diceMesh(sides===100?10:sides),radius=Math.max(24,Math.min(59,w/(count*2.6))),floor=h*.72;
  const dice=expanded.slice(0,count).map((value,i)=>{
