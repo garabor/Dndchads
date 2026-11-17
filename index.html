@@ -418,6 +418,8 @@ function diceMesh(sides){
    }
  }
  // Uniform isotropic scaling preserves all face angles and polyhedral symmetry.
+ const centroid=[0,1,2].map(k=>v.reduce((sum,p)=>sum+p[k],0)/v.length);
+ v=v.map(p=>p.map((x,k)=>x-centroid[k]));
  const max=Math.max(...v.map(p=>Math.hypot(...p)));v=v.map(p=>p.map(x=>x/max));
  return {v,f};
 }
@@ -645,25 +647,14 @@ function drawCrystalFace(ctx,f,d,radius){
    const area=Math.abs(pts.reduce((sum,p,k)=>{const q=pts[(k+1)%pts.length];return sum+p.x*q.y-q.x*p.y;},0))*.5;
    const side=Math.sqrt(area);
    if(edgeLength>5 && side>10){
-     ux/=edgeLength;uy/=edgeLength;
-     // The second axis is perpendicular to the same edge every frame.
-     // Using a fixed edge prevents the digits from jumping between orientations.
-     let vx=-uy,vy=ux;
-     const midX=(p0.x+p1.x)/2,midY=(p0.y+p1.y)/2;
-     if((cx-midX)*vx+(cy-midY)*vy<0){vx=-vx;vy=-vy;}
-     // The fixed edge may be reversed as the die tumbles; don't flip it mid-frame.
-     const compression=Math.min(1,Math.max(.42,n[2]));
-     const label=d.faceNumbers[j];
-     const fontSize=Math.min(radius*.42,side*.47,edgeLength*.7);
-     const text=String(label);
+     const label=String(d.faceNumbers[j]);
+     const fontSize=Math.max(10,Math.min(radius*.40,side*.43));
      ctx.save();ctx.translate(cx,cy);
-     ctx.transform(ux,uy,vx*compression,vy*compression,0,0);
      ctx.textAlign='center';ctx.textBaseline='middle';
      ctx.font=`bold ${fontSize}px Georgia,serif`;
-     const maxTextWidth=Math.max(8,side*.8);
-     ctx.lineJoin='round';ctx.lineWidth=Math.max(.7,fontSize*.085);
-     ctx.strokeStyle='rgba(25,10,39,.94)';ctx.strokeText(text,0,0,maxTextWidth);
-     ctx.fillStyle='#f8e7c5';ctx.fillText(text,0,0,maxTextWidth);
+     ctx.lineJoin='round';ctx.lineWidth=Math.max(.8,fontSize*.10);
+     ctx.strokeStyle='rgba(25,10,39,.94)';ctx.strokeText(label,0,0,side*.86);
+     ctx.fillStyle='#f8e7c5';ctx.fillText(label,0,0,side*.86);
      ctx.restore();
    }
  }
@@ -718,7 +709,7 @@ function showScreenDice(sides,results,keptIndex,title,total){
   const breaking=settled&&critical===1&&i===shatterIndex;
   const breakT=breaking?(elapsed-duration)/1000:0;
   ctx.fillStyle='#03020b80';ctx.beginPath();ctx.ellipse(d.x,floor+radius*.65,radius*1.04,radius*.26,0,0,Math.PI*2);ctx.fill();
-  const verts=d.mesh.v.map(p=>{const q=rotate(p,d,settled),perspective=3.7/(3.7-q[2]*.65);return {x:d.x+q[0]*radius*perspective,y:d.y+q[1]*radius*perspective,z:q[2],q};});
+  const verts=d.mesh.v.map(p=>{const q=rotate(p,d,settled);return {x:d.x+q[0]*radius,y:d.y+q[1]*radius,z:q[2],q};});
   const faces=[];
   d.mesh.f.forEach((face,j)=>{const pts=face.map(idx=>verts[idx]),a=pts[0].q,b=pts[1].q,c=pts[2].q,u=b.map((v,k)=>v-a[k]),v=c.map((v,k)=>v-a[k]);let n=[u[1]*v[2]-u[2]*v[1],u[2]*v[0]-u[0]*v[2],u[0]*v[1]-u[1]*v[0]];const center=pts.reduce((p,q)=>p.map((x,k)=>x+q.q[k]/pts.length),[0,0,0]);if(n.reduce((z,x,k)=>z+x*center[k],0)<0)n=n.map(x=>-x);const nl=Math.hypot(...n)||1;n=n.map(x=>x/nl);if(n[2]<.045&&!breaking)return;faces.push({pts,n,j,depth:center[2],cx:pts.reduce((z,p)=>z+p.x,0)/pts.length,cy:pts.reduce((z,p)=>z+p.y,0)/pts.length});});
   faces.sort((a,b)=>a.depth-b.depth);
