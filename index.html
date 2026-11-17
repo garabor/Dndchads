@@ -692,17 +692,17 @@ function showScreenDice(sides,n,mode,title,bonus,penalty,onResolved){
   // The die is never told a target face or a target value.
   const orientation=[0,0,0].map(()=>Math.random()*Math.PI*2);
   const velocity=[0,0,0].map(()=>((Math.random()-.5)*2)*(.20+Math.random()*.13));
-  // Launch from a randomly chosen compass direction around each landing cell.
-  // Initial velocity points inward; gravity, bounce and friction take over afterwards.
-  // Distances scale with cell size so 40–100 dice remain usable on mobile.
-  const direction=Math.floor(Math.random()*8),angle=direction*Math.PI/4;
-  const travelX=Math.max(radius*.65,Math.min(cellW*.48,35));
-  const travelY=Math.max(radius*.8,Math.min(cellH*.52,45));
-  const x=targetX+Math.cos(angle)*travelX;
-  const y=targetY+Math.sin(angle)*travelY-Math.max(radius*.4,3);
-  const speed=1.15+Math.random()*1.5;
-  const vx=-Math.cos(angle)*speed+(Math.random()-.5)*.65;
-  const vy=-Math.sin(angle)*speed-(.6+Math.random()*.8);
+  // The entire canvas is a tabletop seen from above. No downward screen gravity.
+  // Start at a random direction around the cell, then roll across the tabletop.
+  const angle=Math.random()*Math.PI*2;
+  const travel=Math.min(Math.max(radius*1.7,cellW*.32),Math.max(10,Math.min(cellW,cellH)*.62));
+  const x=Math.max(radius,Math.min(w-radius,targetX+Math.cos(angle)*travel));
+  const y=Math.max(radius,Math.min(h-radius,targetY+Math.sin(angle)*travel));
+  const heading=angle+Math.PI+(Math.random()-.5)*1.4;
+  const speed=.85+Math.random()*1.55;
+  const vx=Math.cos(heading)*speed,vy=Math.sin(heading)*speed;
+  // Rotation is coupled to planar travel (rolling rather than falling).
+  velocity[0]=vy/radius*1.2;velocity[1]=-vx/radius*1.2;velocity[2]=(Math.random()-.5)*.07;
   return {soundStage:0,targetX,targetY,x,y,vx,vy,orientation,velocity,mesh,faceNumbers,landed:false,flash:0,fragments:null,contactCount:0,sleeping:false,quietFrames:0};
  });
  // Continuous orientation: the same rotation is used throughout flight and landing.
@@ -735,59 +735,54 @@ function showScreenDice(sides,n,mode,title,bonus,penalty,onResolved){
  try { recordedSound('roll',1); } catch(e) {}
  function frame(now){try{if(seq!==diceThrowSequence||!overlay.isConnected)return;const elapsed=now-start,progress=Math.min(1,elapsed/duration),settled=progress>=1;
  const dt=Math.min(2,Math.max(0,(now-lastFrame)/16.667));lastFrame=now;
- // Fixed-ish timestep gravity, restitution and tangential friction. No snap to a target face.
+ // Top-down tabletop roll: no gravitational attraction to the bottom of the screen.
+ // Kinetic friction damps both travel and spin; static friction puts slow dice to sleep.
  if(!settled){
-  const steps=Math.max(1,Math.ceil(dt));const hstep=dt/steps;
+  const steps=Math.max(1,Math.ceil(dt)),hstep=dt/steps;
   for(let step=0;step<steps;step++){
    for(const d of dice){
     if(d.sleeping)continue;
-    d.vy+=.48*hstep;d.x+=d.vx*hstep;d.y+=d.vy*hstep;
+    d.x+=d.vx*hstep;d.y+=d.vy*hstep;
     for(let k=0;k<3;k++)d.orientation[k]+=d.velocity[k]*hstep;
-    if(d.y>=d.targetY){
-     d.y=d.targetY;
-     if(d.vy>0){d.vy=-d.vy*.34;d.contactCount++;d.velocity=d.velocity.map(v=>v+(.5-Math.random())*.045);}
-     d.vx*=Math.pow(.60,hstep);d.vy*=Math.pow(.65,hstep);
-     d.velocity=d.velocity.map(v=>v*Math.pow(.60,hstep));
-     if(Math.abs(d.vy)<.65)d.vy=0;
-     // Static friction: resting dice stop receiving gravity and stop rotating.
-     if(Math.abs(d.vx)<.12&&Math.abs(d.vy)<.12&&Math.max(...d.velocity.map(Math.abs))<.012){
-       d.quietFrames++;if(d.quietFrames>=3){d.sleeping=true;d.vx=0;d.vy=0;d.velocity=[0,0,0];}
-     }else d.quietFrames=0;
-    }else{
-     d.vx*=Math.pow(.997,hstep);
-     d.velocity=d.velocity.map(v=>v*Math.pow(.996,hstep));
-    }
-    if(d.x<radius){d.x=radius;d.vx=Math.abs(d.vx)*.42;}
-    if(d.x>w-radius){d.x=w-radius;d.vx=-Math.abs(d.vx)*.42;}
+    const linearDrag=Math.pow(.972,hstep),angularDrag=Math.pow(.964,hstep);
+    d.vx*=linearDrag;d.vy*=linearDrag;
+    d.velocity=d.velocity.map(v=>v*angularDrag);
+    // Screen boundaries are the edges of the tabletop, not a floor.
+    if(d.x<radius){d.x=radius;d.vx=Math.abs(d.vx)*.32;}
+    if(d.x>w-radius){d.x=w-radius;d.vx=-Math.abs(d.vx)*.32;}
+    if(d.y<radius){d.y=radius;d.vy=Math.abs(d.vy)*.32;}
+    if(d.y>h-radius){d.y=h-radius;d.vy=-Math.abs(d.vy)*.32;}
+    const linearSpeed=Math.hypot(d.vx,d.vy),angularSpeed=Math.hypot(...d.velocity);
+    if(linearSpeed<.025&&angularSpeed<.003){
+     d.quietFrames++;
+     if(d.quietFrames>=4){d.sleeping=true;d.vx=0;d.vy=0;d.velocity=[0,0,0];}
+    }else d.quietFrames=0;
    }
-   // Pairwise horizontal impulse, overlap correction and rotational transfer.
-   // Dense rolls use independent landing cells to avoid O(n²) collision jitter.
+   // Collision impulses preserve the original multi-die rolling interaction.
+   // Spatially expensive pair checks are omitted for large batches on mobile.
    if(count<=24)for(let i=0;i<dice.length;i++)for(let j=i+1;j<dice.length;j++){
     const a=dice[i],b=dice[j];
-    if(a.sleeping&&b.sleeping)continue;
     const dx=b.x-a.x,dy=b.y-a.y,dist=Math.hypot(dx,dy)||.001,minDist=radius*1.55;
     if(dist>=minDist)continue;
-    const nx=dx/dist,ny=dy/dist,penetration=minDist-dist;
-    a.x-=nx*penetration*.5;b.x+=nx*penetration*.5;
-    a.y-=ny*penetration*.5;b.y+=ny*penetration*.5;
+    const nx=dx/dist,ny=dy/dist,overlap=minDist-dist;
+    a.x-=nx*overlap*.5;b.x+=nx*overlap*.5;
+    a.y-=ny*overlap*.5;b.y+=ny*overlap*.5;
     const relative=(b.vx-a.vx)*nx+(b.vy-a.vy)*ny;
     if(relative<0){
-     if(a.sleeping){a.sleeping=false;a.quietFrames=0;}
-     if(b.sleeping){b.sleeping=false;b.quietFrames=0;}
-     const impulse=-(1+.38)*relative/2;
+     a.sleeping=false;b.sleeping=false;a.quietFrames=0;b.quietFrames=0;
+     const impulse=-(1+.42)*relative*.5;
      a.vx-=impulse*nx;b.vx+=impulse*nx;
      a.vy-=impulse*ny;b.vy+=impulse*ny;
-     const tangent=(b.vx-a.vx)*(-ny)+(b.vy-a.vy)*nx;
-     const friction=Math.max(-Math.abs(impulse)*.22,Math.min(Math.abs(impulse)*.22,tangent*.22));
-     a.vx+=friction*(-ny);a.vy+=friction*nx;
-     b.vx-=friction*(-ny);b.vy-=friction*nx;
-     a.velocity[2]-=friction*.012;b.velocity[2]+=friction*.012;
+     a.velocity[0]-=impulse*ny/Math.max(3,radius);
+     b.velocity[0]+=impulse*ny/Math.max(3,radius);
+     a.velocity[1]+=impulse*nx/Math.max(3,radius);
+     b.velocity[1]-=impulse*nx/Math.max(3,radius);
     }
    }
   }
  }
  ctx.clearRect(0,0,w,h);
- const glow=ctx.createRadialGradient(w/2,floor,0,w/2,floor,w*.55);glow.addColorStop(0,'#533b6b44');glow.addColorStop(1,'#00000000');ctx.fillStyle=glow;ctx.fillRect(0,0,w,h);
+ const glow=ctx.createRadialGradient(w/2,h/2,0,w/2,h/2,w*.7);glow.addColorStop(0,'#533b6b44');glow.addColorStop(1,'#00000000');ctx.fillStyle=glow;ctx.fillRect(0,0,w,h);
  dice.forEach((d,i)=>{
   if(settled){d.sleeping=true;d.vx=0;d.vy=0;d.velocity=[0,0,0];}
   // Render the actual simulated position and rotation; never ease into a target pose.
@@ -800,7 +795,7 @@ function showScreenDice(sides,n,mode,title,bonus,penalty,onResolved){
   }
   const breaking=settled&&critical===1&&i===shatterIndex;
   const breakT=breaking?(elapsed-duration)/1000:0;
-  ctx.fillStyle='#03020b80';ctx.beginPath();ctx.ellipse(d.x,floor+radius*.65,radius*1.04,radius*.26,0,0,Math.PI*2);ctx.fill();
+  ctx.fillStyle='#03020b80';ctx.beginPath();ctx.ellipse(d.x,d.y+radius*.65,radius*1.04,radius*.26,0,0,Math.PI*2);ctx.fill();
   const verts=d.mesh.v.map(p=>{const q=rotate(p,d);return {x:d.x+q[0]*radius,y:d.y+q[1]*radius,z:q[2],q};});
   const faces=[];
   d.mesh.f.forEach((face,j)=>{const pts=face.map(idx=>verts[idx]),a=pts[0].q,b=pts[1].q,c=pts[2].q,u=b.map((v,k)=>v-a[k]),v=c.map((v,k)=>v-a[k]);let n=[u[1]*v[2]-u[2]*v[1],u[2]*v[0]-u[0]*v[2],u[0]*v[1]-u[1]*v[0]];const center=pts.reduce((p,q)=>p.map((x,k)=>x+q.q[k]/pts.length),[0,0,0]);if(n.reduce((z,x,k)=>z+x*center[k],0)<0)n=n.map(x=>-x);const nl=Math.hypot(...n)||1;n=n.map(x=>x/nl);if(n[2]<.045&&!breaking)return;faces.push({pts,n,j,depth:center[2],cx:pts.reduce((z,p)=>z+p.x,0)/pts.length,cy:pts.reduce((z,p)=>z+p.y,0)/pts.length});});
