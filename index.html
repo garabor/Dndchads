@@ -767,7 +767,7 @@ function roll(n,sides,bonus=0,title='Roll',applyEx=false){
  let penalty=applyEx?-2*exhaust():0;
  let total=used.reduce((p,c)=>p+c,0)+bonus+penalty;
  drawAnimatedDice(sides,results,keptIndex);
- showScreenDice(sides,results,keptIndex,title,total);
+ try{showScreenDice(sides,results,keptIndex,title,total)}catch(e){console.error('Dice animation failed',e);toast('Dice result: '+total)}
  const modeLabel=contested?(mode==='adv'?'Advantage':'Disadvantage'):'Normal';
  log.unshift(`<div class="die"><strong>${esc(title)}: ${total}</strong> <span class="muted">(${contested?'2d20 '+modeLabel:n+'d'+sides} [${results.join(', ')}]${contested?' → '+used[0]:''} ${fmt(bonus)}${penalty?' '+penalty+' exhaustion':''})</span></div>`);
  log=log.slice(0,15);$('diceLog').innerHTML=log.join('');toast(`${title}: ${total}`);return total;
@@ -1219,7 +1219,7 @@ function ledgerDerivedSenses(){
   result.push({name,range,source,detail});
  };
  const species=state.species||'',edition=state.speciesEdition||'2024';
- const row=(edition==='2024'?SPECIES_2024:SPECIES_LEGACY).find(x=>x[0]===species);
+ const row=(SPECIES_RULES[edition]||[]).find(x=>x[0]===species);
  const traits=String(row?.[1]||'');
  if(/\bSuperior Darkvision\b/i.test(traits))add('Darkvision',120,'Species: '+species,'Superior Darkvision');
  else if(/\bDarkvision\b/i.test(traits))add('Darkvision',60,'Species: '+species);
