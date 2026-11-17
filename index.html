@@ -664,7 +664,7 @@ function drawCrystalFace(ctx,f,d,radius){
  ctx.restore();
  path();ctx.strokeStyle=`rgba(244,208,151,${.48+light*.42})`;ctx.lineWidth=Math.max(1.1,radius*.026);ctx.stroke();
 }
-function showScreenDice(sides,results,keptIndex,title,total){
+function showScreenDice(sides,n,mode,title,bonus,penalty,onResolved){
  const seq=++diceThrowSequence;if(activeDiceAnimation)cancelAnimationFrame(activeDiceAnimation);
  document.getElementById('diceThrowOverlay')?.remove();
  const overlay=document.createElement('div');overlay.id='diceThrowOverlay';
@@ -673,35 +673,95 @@ function showScreenDice(sides,results,keptIndex,title,total){
  const canvas=document.createElement('canvas');canvas.style.cssText='width:100%;height:100%;display:block';overlay.appendChild(canvas);document.body.appendChild(overlay);
  const ctx=canvas.getContext('2d');if(!ctx){overlay.remove();return;}
  const dpr=Math.min(devicePixelRatio||1,3),w=innerWidth,h=innerHeight;canvas.width=w*dpr;canvas.height=h*dpr;ctx.setTransform(dpr,0,0,dpr,0,0);
- const expanded=sides===100?results.flatMap(value=>{const digits=value%100;return [Math.floor(digits/10)*10,digits%10];}):results;
- const count=Math.min(expanded.length,12),mesh=diceMesh(sides===100?10:sides),radius=Math.max(24,Math.min(59,w/(count*2.6))),floor=h*.72;
+ const expanded=Array.from({length:n*(sides===100?2:1)},()=>0);
+ const count=expanded.length,mesh=diceMesh(sides===100?10:sides),radius=Math.max(11,Math.min(59,w/(count*2.6))),floor=h*.72;
  const dice=expanded.slice(0,count).map((value,i)=>{
   const targetX=w/2+(i-(count-1)/2)*Math.min(115,w/(count+1));
   // Immutable number-to-face mapping. A polygon's label never changes during the roll.
   const isPercentile=sides===100&&i%2===0;
   const faceNumbers=Array.from({length:mesh.f.length},(_,j)=>
     sides===100?(isPercentile?String(j*10).padStart(2,'0'):j):(sides===10?j:j+1));
-  const faceIndex=sides===100?(isPercentile?Math.floor(value/10):value):sides===10?(value%10):Math.max(0,Math.min(mesh.f.length-1,value-1));
-  const face=mesh.f[faceIndex];let normal=[0,0,0];face.forEach(idx=>mesh.v[idx].forEach((x,k)=>normal[k]+=x/face.length));const len=Math.hypot(...normal)||1;normal=normal.map(x=>x/len);
-  // Rotate the selected numbered face toward the camera at the end of the throw.
-  const axis=[normal[1],-normal[0],0],axisLen=Math.hypot(...axis);const angle=Math.acos(Math.max(-1,Math.min(1,normal[2])));
-  return {soundStage:0,value,targetX,x:targetX+(Math.random()-.5)*w*.5,y:-radius*3-Math.random()*100,vy:0,spin:[Math.random()*6,Math.random()*6,Math.random()*6],axis:axisLen?axis.map(x=>x/axisLen):[1,0,0],angle:normal[2]<-.999?Math.PI:angle,mesh,faceIndex,faceNumbers,landed:false,flash:0,fragments:null};
+  // The die is never told a target face or a target value.
+  const orientation=[0,0,0].map(()=>Math.random()*Math.PI*2);
+  const velocity=[0,0,0].map(()=>((Math.random()-.5)*2)*(.20+Math.random()*.13));
+  return {soundStage:0,targetX,x:targetX+(Math.random()-.5)*w*.32,y:Math.max(-radius*3,-radius*2-Math.random()*90),vx:(Math.random()-.5)*5,vy:1+Math.random()*2,orientation,velocity,mesh,faceNumbers,landed:false,flash:0,fragments:null,contactCount:0};
  });
- const rotateAxis=(p,axis,angle)=>{const c=Math.cos(angle),sn=Math.sin(angle),dot=p.reduce((a,x,i)=>a+x*axis[i],0),cross=[axis[1]*p[2]-axis[2]*p[1],axis[2]*p[0]-axis[0]*p[2],axis[0]*p[1]-axis[1]*p[0]];return p.map((x,i)=>x*c+cross[i]*sn+axis[i]*dot*(1-c));};
- const rotate=(p,d,settle)=>{if(settle)return rotateAxis(p,d.axis,d.angle);let [x,y,z]=p;let c=Math.cos(d.spin[0]),sn=Math.sin(d.spin[0]);[y,z]=[y*c-z*sn,y*sn+z*c];c=Math.cos(d.spin[1]);sn=Math.sin(d.spin[1]);[x,z]=[x*c+z*sn,-x*sn+z*c];c=Math.cos(d.spin[2]);sn=Math.sin(d.spin[2]);return [x*c-y*sn,x*sn+y*c,z]};
- const start=performance.now(),duration=1900,critical=sides===20&&(keptIndex>=0?results[keptIndex]:results.length===1?results[0]:null);
- // Each broken fragment is an actual polygon from the die's own 3D mesh.
- const shatterIndex=critical===1?(keptIndex>=0?keptIndex:0):-1;
- let soundAt=0;
- // Sound must never interrupt the animation if an audio source fails.
- // A short initial contact sound, followed by each die's own impacts below.
- try { recordedSound('roll',1); } catch(e) { console.warn('Dice recording unavailable',e); }
+ // Continuous orientation: the same rotation is used throughout flight and landing.
+ const rotate=(p,d)=>{let [x,y,z]=p;let c=Math.cos(d.orientation[0]),sn=Math.sin(d.orientation[0]);[y,z]=[y*c-z*sn,y*sn+z*c];c=Math.cos(d.orientation[1]);sn=Math.sin(d.orientation[1]);[x,z]=[x*c+z*sn,-x*sn+z*c];c=Math.cos(d.orientation[2]);sn=Math.sin(d.orientation[2]);return [x*c-y*sn,x*sn+y*c,z]};
+ const start=performance.now(),duration=3600;
+ let resolved=false,results=[],keptIndex=-1,total=0,critical=null,shatterIndex=-1;
+ const faceValue=(d)=>{
+  let best=-Infinity,index=0;
+  d.mesh.f.forEach((face,j)=>{
+   const points=face.map(k=>rotate(d.mesh.v[k],d));
+   const center=points.reduce((a,p)=>a.map((v,k)=>v+p[k]/points.length),[0,0,0]);
+   if(center[2]>best){best=center[2];index=j;}
+  });
+  return Number(d.faceNumbers[index]);
+ };
+ const finish=()=>{
+  if(resolved)return;resolved=true;
+  const visible=dice.map(faceValue);
+  if(sides===100){for(let i=0;i<visible.length;i+=2){const v=visible[i]+visible[i+1];results.push(v===0?100:v);}}
+  else results=visible.map(v=>sides===10&&v===0?10:v);
+  const contested=sides===20&&n===1&&mode!=='normal';
+  keptIndex=contested?(mode==='adv'?(results[0]>=results[1]?0:1):(results[0]<=results[1]?0:1)):-1;
+  const used=contested?[results[keptIndex]]:results;
+  total=used.reduce((a,b)=>a+b,0)+bonus+penalty;
+  critical=sides===20&&(keptIndex>=0?results[keptIndex]:results.length===1?results[0]:null);
+  shatterIndex=critical===1?(keptIndex>=0?keptIndex:0):-1;
+  onResolved({results,keptIndex,total});
+ };
+ let lastFrame=start,soundAt=0;
+ try { recordedSound('roll',1); } catch(e) {}
  function frame(now){try{if(seq!==diceThrowSequence||!overlay.isConnected)return;const elapsed=now-start,progress=Math.min(1,elapsed/duration),settled=progress>=1;
+ const dt=Math.min(2,Math.max(0,(now-lastFrame)/16.667));lastFrame=now;
+ // Fixed-ish timestep gravity, restitution and tangential friction. No snap to a target face.
+ if(!settled){
+  const steps=Math.max(1,Math.ceil(dt));const hstep=dt/steps;
+  for(let step=0;step<steps;step++){
+   for(const d of dice){
+    d.vy+=.48*hstep;d.x+=d.vx*hstep;d.y+=d.vy*hstep;
+    for(let k=0;k<3;k++)d.orientation[k]+=d.velocity[k]*hstep;
+    if(d.y+radius>=floor){
+     d.y=floor-radius;
+     if(d.vy>0){d.vy=-d.vy*.34;d.contactCount++;d.velocity=d.velocity.map(v=>v+(.5-Math.random())*.045);}
+     d.vx*=Math.pow(.82,hstep);d.vy*=Math.pow(.84,hstep);
+     d.velocity=d.velocity.map(v=>v*Math.pow(.78,hstep));
+     if(Math.abs(d.vy)<.65)d.vy=0;
+    }else{
+     d.vx*=Math.pow(.997,hstep);
+     d.velocity=d.velocity.map(v=>v*Math.pow(.996,hstep));
+    }
+    if(d.x<radius){d.x=radius;d.vx=Math.abs(d.vx)*.42;}
+    if(d.x>w-radius){d.x=w-radius;d.vx=-Math.abs(d.vx)*.42;}
+   }
+   // Pairwise horizontal impulse, overlap correction and rotational transfer.
+   for(let i=0;i<dice.length;i++)for(let j=i+1;j<dice.length;j++){
+    const a=dice[i],b=dice[j],dx=b.x-a.x,dy=b.y-a.y,dist=Math.hypot(dx,dy)||.001,minDist=radius*1.55;
+    if(dist>=minDist)continue;
+    const nx=dx/dist,ny=dy/dist,penetration=minDist-dist;
+    a.x-=nx*penetration*.5;b.x+=nx*penetration*.5;
+    a.y-=ny*penetration*.5;b.y+=ny*penetration*.5;
+    const relative=(b.vx-a.vx)*nx+(b.vy-a.vy)*ny;
+    if(relative<0){
+     const impulse=-(1+.38)*relative/2;
+     a.vx-=impulse*nx;b.vx+=impulse*nx;
+     a.vy-=impulse*ny;b.vy+=impulse*ny;
+     const tangent=(b.vx-a.vx)*(-ny)+(b.vy-a.vy)*nx;
+     const friction=Math.max(-Math.abs(impulse)*.22,Math.min(Math.abs(impulse)*.22,tangent*.22));
+     a.vx+=friction*(-ny);a.vy+=friction*nx;
+     b.vx-=friction*(-ny);b.vy-=friction*nx;
+     a.velocity[2]-=friction*.012;b.velocity[2]+=friction*.012;
+    }
+   }
+  }
+ }
  ctx.clearRect(0,0,w,h);
  const glow=ctx.createRadialGradient(w/2,floor,0,w/2,floor,w*.55);glow.addColorStop(0,'#533b6b44');glow.addColorStop(1,'#00000000');ctx.fillStyle=glow;ctx.fillRect(0,0,w,h);
  dice.forEach((d,i)=>{
-  if(!settled){const t=Math.min(1,progress*1.25);d.x+=(d.targetX-d.x)*.08;d.y=-radius*2+(floor-radius*.95+radius*2)*(1-Math.pow(1-t,2));d.y-=Math.abs(Math.sin(t*11))*radius*.6*(1-t);d.spin=d.spin.map((v,k)=>v+(k+1)*.085*(1-t*.8));if(t>.48&&now-soundAt>190){soundAt=now;}}
-  else{d.x+=(d.targetX-d.x)*.12;d.y+=(floor-radius*.95-d.y)*.12;}
+  if(settled){d.y=Math.min(d.y,floor-radius);}
+  // Render the actual simulated position and rotation; never ease into a target pose.
   // One independent sound timeline per visible die, never an arbitrary late replay.
   const phase=progress;
   const stage=phase>=.86?3:phase>=.69?2:phase>=.51?1:0;
@@ -712,7 +772,7 @@ function showScreenDice(sides,results,keptIndex,title,total){
   const breaking=settled&&critical===1&&i===shatterIndex;
   const breakT=breaking?(elapsed-duration)/1000:0;
   ctx.fillStyle='#03020b80';ctx.beginPath();ctx.ellipse(d.x,floor+radius*.65,radius*1.04,radius*.26,0,0,Math.PI*2);ctx.fill();
-  const verts=d.mesh.v.map(p=>{const q=rotate(p,d,settled);return {x:d.x+q[0]*radius,y:d.y+q[1]*radius,z:q[2],q};});
+  const verts=d.mesh.v.map(p=>{const q=rotate(p,d);return {x:d.x+q[0]*radius,y:d.y+q[1]*radius,z:q[2],q};});
   const faces=[];
   d.mesh.f.forEach((face,j)=>{const pts=face.map(idx=>verts[idx]),a=pts[0].q,b=pts[1].q,c=pts[2].q,u=b.map((v,k)=>v-a[k]),v=c.map((v,k)=>v-a[k]);let n=[u[1]*v[2]-u[2]*v[1],u[2]*v[0]-u[0]*v[2],u[0]*v[1]-u[1]*v[0]];const center=pts.reduce((p,q)=>p.map((x,k)=>x+q.q[k]/pts.length),[0,0,0]);if(n.reduce((z,x,k)=>z+x*center[k],0)<0)n=n.map(x=>-x);const nl=Math.hypot(...n)||1;n=n.map(x=>x/nl);if(n[2]<.045&&!breaking)return;faces.push({pts,n,j,depth:center[2],cx:pts.reduce((z,p)=>z+p.x,0)/pts.length,cy:pts.reduce((z,p)=>z+p.y,0)/pts.length});});
   faces.sort((a,b)=>a.depth-b.depth);
@@ -736,6 +796,7 @@ function showScreenDice(sides,results,keptIndex,title,total){
    ctx.restore();
   });
  });
+ if(settled){finish();}
  if(settled&&(sides===100||sides===10)){ctx.textAlign='center';ctx.font='bold 16px system-ui';ctx.fillStyle='#f4d6a0';ctx.fillText(sides===100?'Percentile: '+results.join(', ')+' (00 + 0 = 100)':'d10: 0 on the die represents 10',w/2,Math.min(h-80,floor+radius*1.7));}
  if(settled){ctx.textAlign='center';ctx.font='bold 23px system-ui';ctx.fillStyle='#ffe2ae';ctx.fillText('Total: '+total,w/2,Math.min(h-54,floor+radius*2.3));}
  if(settled&&critical===1){const t=(elapsed-duration)/1000;if(t<.4){ctx.fillStyle=`rgba(255,208,233,${Math.max(0,.17-t*.4)})`;ctx.fillRect(0,0,w,h);}}
@@ -746,25 +807,24 @@ function showScreenDice(sides,results,keptIndex,title,total){
   }
  }
  if(elapsed<duration+(critical===20?3600:1900))activeDiceAnimation=requestAnimationFrame(frame);else{overlay.remove();activeDiceAnimation=null;}
- }catch(error){console.error('3D dice renderer:',error);overlay.remove();activeDiceAnimation=null;toast('Dice rolled: '+total);}
+ }catch(error){console.error('3D dice renderer:',error);if(!resolved)finish();overlay.remove();activeDiceAnimation=null;toast('Dice rolled: '+total);}
  }
  activeDiceAnimation=requestAnimationFrame(frame);
 }
 function roll(n,sides,bonus=0,title='Roll',applyEx=false){
- // Silent dice rolls.
  n=clamp(Math.floor(num(n,1)),1,20);sides=clamp(Math.floor(num(sides,20)),2,100);
  const mode=$('rollMode')?.value||'normal';
  const contested=sides===20&&n===1&&mode!=='normal';
- const results=Array.from({length:contested?2:n},()=>1+Math.floor(Math.random()*sides));
- const keptIndex=contested?(mode==='adv'?(results[0]>=results[1]?0:1):(results[0]<=results[1]?0:1)):-1;
- const used=contested?[results[keptIndex]]:results;
- let penalty=applyEx?-2*exhaust():0;
- let total=used.reduce((p,c)=>p+c,0)+bonus+penalty;
- drawAnimatedDice(sides,results,keptIndex);
- try{showScreenDice(sides,results,keptIndex,title,total)}catch(e){console.error('Dice animation failed',e);toast('Dice result: '+total)}
- const modeLabel=contested?(mode==='adv'?'Advantage':'Disadvantage'):'Normal';
- log.unshift(`<div class="die"><strong>${esc(title)}: ${total}</strong> <span class="muted">(${contested?'2d20 '+modeLabel:n+'d'+sides} [${results.join(', ')}]${contested?' → '+used[0]:''} ${fmt(bonus)}${penalty?' '+penalty+' exhaustion':''})</span></div>`);
- log=log.slice(0,15);$('diceLog').innerHTML=log.join('');toast(`${title}: ${total}`);return total;
+ const visibleCount=contested?2:n;
+ const penalty=applyEx?-2*exhaust():0;
+ showScreenDice(sides,visibleCount,mode,title,bonus,penalty,({results,keptIndex,total})=>{
+  const used=contested?[results[keptIndex]]:results;
+  drawAnimatedDice(sides,results,keptIndex);
+  const modeLabel=contested?(mode==='adv'?'Advantage':'Disadvantage'):'Normal';
+  log.unshift(`<div class="die"><strong>${esc(title)}: ${total}</strong> <span class="muted">(${contested?'2d20 '+modeLabel:n+'d'+sides} [${results.join(', ')}]${contested?' → '+used[0]:''} ${fmt(bonus)}${penalty?' '+penalty+' exhaustion':''})</span></div>`);
+  log=log.slice(0,15);$('diceLog').innerHTML=log.join('');toast(`${title}: ${total}`);
+ });
+ // Results are deliberately unavailable until the actual rendered dice stop.
 }
 function rollFormula(formula,label){let s=String(formula).trim().replace(/\s+/g,'');let match=s.match(/^(\d{1,2})d(\d{1,3})([+-]\d{1,3})?$/i);if(!match){toast('Invalid damage expression. Example: 2d6+3');return}roll(+match[1],+match[2],+(match[3]||0),label,false)}
 
