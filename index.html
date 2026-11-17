@@ -130,7 +130,7 @@ button.primary,.sectiontabs button.active{background:linear-gradient(140deg,#642
 @keyframes throwFadeIn{from{opacity:0}to{opacity:1}}
 @media(prefers-reduced-motion:reduce){#diceThrowOverlay .throw-die.tumbling{animation:none;transform:translate(calc(-50% + var(--endX)),-50%)}}
 </style><style>.invrow{border:1px solid #705734;border-radius:10px;padding:12px;margin:10px 0;background:rgba(15,11,27,.68)}.invrow .row{flex-wrap:wrap}.invrow .row button{width:auto}.invrow input[type=number]{max-width:90px}.invrow .hint{margin:7px 0}.invrow .pill{font-size:11px}.itemmuted{opacity:.72}#itemPicker{min-height:42px}details summary{cursor:pointer;color:#dfc58b;font-weight:650}</style></head><body><main class="shell"><header class="top"><div><div class="eyebrow">D&D 2024 · 2014 legacy · Crystal Palace 3.1</div><div class="brand">Adventurer's Ledger</div><div class="subtitle">Your offline character sheet · automatic calculations · local saves</div></div><div class="actions"><button id="exportBtn">↓ Export JSON</button><button id="importBtn">↑ Import JSON</button><input type="file" accept=".json,application/json" id="importFile" class="hidden"><button id="resetBtn" class="danger">New Character</button></div></header><div class="notice">2024 character sheet with selected 2014 legacy options, automatic saves, class progression, and equipment effects. Some features still need manual tracking.</div><div class="columns"><aside><section class="panel"><h2>Character</h2><div class="field"><label>Name</label><input data-bind="name" placeholder="Not specified"></div><div class="grid two" style="margin-top:12px"><div class="field"><label>Level</label><input type="number" data-bind="level" min="1" max="20"></div><div class="field"><label>XP</label><input type="number" data-bind="xp" min="0"></div><div class="field"><label>Class</label><select data-bind="className" id="className"></select></div><div class="field"><label>Subclass</label><select data-bind="subclass" id="subclassSelect"><option value="">— Select a class first —</option></select></div><div class="field"><label>Species</label><select data-bind="species" id="speciesSelect"></select></div><div class="field"><label>Species Lineage</label><select id="speciesLineage"><option value="">— Select a species —</option></select></div><div class="field"><label>Species Rules Edition</label><select id="speciesEdition"><option value="2024">2024</option><option value="2014">2014</option></select></div><div class="field"><label>Background Rules Edition</label><select id="backgroundEdition"><option value="2024">2024</option><option value="2014">2014 (legacy)</option></select></div><div class="field"><label>Background</label><select id="backgroundSelect"></select></div><div id="backgroundDetails" style="grid-column:1/-1"></div></div></section><section class="panel"><h2>Ability Scores</h2><div class="hint">Changing a score recalculates all related values.</div><div id="abilities"></div></section><section class="panel"><h2>Saving Throws</h2><div id="saves"></div><div class="hint" style="margin-top:10px">Checked means proficient. Set additional bonuses in the Bonuses tab.</div></section></aside><div><div class="grid four" style="margin-bottom:16px"><div class="stat"><div class="tiny">Proficiency</div><div class="num" id="profValue">+2</div><small>Based on level</small></div><div class="stat"><div class="tiny">Armor Class</div><div class="num" id="acValue">10</div><small id="acDetail">Unarmored</small></div><div class="stat"><div class="tiny">Initiative</div><div class="num" id="initiativeValue">+0</div><button data-roll="initiative" style="font-size:11px;padding:4px 8px">Roll</button></div><div class="stat"><div class="tiny">Passive Perception</div><div class="num" id="passiveValue">10</div><small>10 + Perception</small></div></div><div class="sectiontabs" id="tabs"><button data-tab="overview" class="active">Overview</button><button data-tab="skills">Skills</button><button data-tab="combat">Combat</button><button data-tab="spells">Spells</button><button data-tab="features">Features / Items</button><button data-tab="items">Items / Attunement</button><button data-tab="bonuses">Bonuses</button><button data-tab="feats">Feats</button></div>
-<section class="panel" id="builderPanel"><div class="row space"><h2>Automatic Character Builder</h2><span class="pill">Class + Subclass + Species</span></div><div id="builderSummary" class="hint">Select a class to begin.</div><div class="panel" style="margin-top:12px;background:#1b1826"><h3>Senses</h3><div id="classSenses"></div></div><div id="classFeatures"></div><div id="speciesFeatures"></div><details class="panel" id="featureChoicePanel" style="background:#211b30" open><summary><strong>⚔ Class Features & Choices</strong></summary><div id="classChoiceControls"></div></details></section><section class="tab" data-section="overview"><div class="panel"><h2>Character Summary</h2><div class="grid four"><div class="field"><label>Speed (ft)</label><input type="number" data-bind="speed" min="0"></div><div class="field"><label>Hit Dice</label><select data-bind="hitDie"><option value="0">—</option><option value="6">d6</option><option value="8">d8</option><option value="10">d10</option><option value="12">d12</option></select></div><div class="field"><label>Inspiration</label><select data-bind="inspiration"><option value="0">None</option><option value="1">Yes</option></select></div><div class="field"><label>Exhaustion</label><input type="number" min="0" max="6" data-bind="exhaustion"></div></div><div class="grid two" style="margin-top:14px"><div class="field"><label>Alignment</label><input data-bind="alignment" placeholder="—"></div><div class="field"><label>Languages</label><input data-bind="languages" placeholder="—"></div></div><details class="panel" id="proficiencyPanel" open style="margin-top:14px"><summary style="cursor:pointer;font-size:17px;color:#eacb8e;font-weight:bold">Languages & Tool Proficiencies</summary><p class="hint">2024: Common plus two chosen standard languages. Background tool proficiency is displayed automatically; additional proficiencies can be selected. Legacy rules may differ.</p><div class="grid two"><div class="field"><label>Select Language</label><select id="languagePick"></select></div><div class="field"><label>Select Tool</label><select id="toolPick"></select></div></div><div class="grid two" style="margin-top:10px"><button id="addLanguage" type="button">+ Add Language</button><button id="addTool" type="button">+ Add Tool</button></div><h3>Known Languages</h3><div id="languageList" class="checklist"></div><h3>Tool Proficiencies</h3><div id="toolList" class="checklist"></div><p class="hint">Background tools update automatically when you change backgrounds. Your selected languages and tools are included in JSON exports.</p></details><div class="field" style="margin-top:14px"><label>Description / Backstory</label><textarea data-bind="description" placeholder="Character description…"></textarea></div></div><div class="panel"><h2>Dice Roller</h2><div class="row" style="flex-wrap:wrap"><select id="dieSelect" style="max-width:145px"><option value="4">d4</option><option value="6">d6</option><option value="8">d8</option><option value="10">d10</option><option value="12">d12</option><option value="20" selected>d20</option><option value="100">d100</option></select><input id="dieCount" type="number" min="1" max="20" value="1" style="max-width:95px" aria-label="Number of Dice"><input id="dieBonus" type="number" value="0" style="max-width:95px" aria-label="Roll bonus"><button class="primary" id="rollCustom">Roll</button><select id="rollMode" aria-label="D20 roll mode" style="max-width:185px"><option value="normal">Normal</option><option value="adv">Advantage</option><option value="dis">Disadvantage</option></select></div><div class="hint" style="margin-top:8px">Last field: additional modifier. Advantage and Disadvantage apply only to a single d20 roll (including attacks, saves, skills and initiative). Damage dice roll normally.</div><div id="diceStage" class="dice-stage" role="status" aria-live="polite"><span class="hint">Roll any die to see it animate here.</span></div><div id="diceLog" aria-live="polite"></div></div></section>
+<section class="panel" id="builderPanel"><div class="row space"><h2>Automatic Character Builder</h2><span class="pill">Class + Subclass + Species</span></div><div id="builderSummary" class="hint">Select a class to begin.</div><div class="panel" style="margin-top:12px;background:#1b1826"><h3>Senses</h3><div id="classSenses"></div></div><div id="classFeatures"></div><div id="speciesFeatures"></div><div class="panel" id="ledgerFeatureSources" style="margin-top:12px;background:#1b1826"></div><div class="panel" style="margin-top:12px;background:#1b1826"><button type="button" id="ledgerRandomButton">Preview Random Character</button><div id="ledgerRandomPreview"></div></div><details class="panel" id="featureChoicePanel" style="background:#211b30" open><summary><strong>⚔ Class Features & Choices</strong></summary><div id="classChoiceControls"></div></details></section><section class="tab" data-section="overview"><div class="panel"><h2>Character Summary</h2><div class="grid four"><div class="field"><label>Speed (ft)</label><input type="number" data-bind="speed" min="0"></div><div class="field"><label>Hit Dice</label><select data-bind="hitDie"><option value="0">—</option><option value="6">d6</option><option value="8">d8</option><option value="10">d10</option><option value="12">d12</option></select></div><div class="field"><label>Inspiration</label><select data-bind="inspiration"><option value="0">None</option><option value="1">Yes</option></select></div><div class="field"><label>Exhaustion</label><input type="number" min="0" max="6" data-bind="exhaustion"></div></div><div class="grid two" style="margin-top:14px"><div class="field"><label>Alignment</label><input data-bind="alignment" placeholder="—"></div><div class="field"><label>Languages</label><input data-bind="languages" placeholder="—"></div></div><details class="panel" id="proficiencyPanel" open style="margin-top:14px"><summary style="cursor:pointer;font-size:17px;color:#eacb8e;font-weight:bold">Languages & Tool Proficiencies</summary><p class="hint">2024: Common plus two chosen standard languages. Background tool proficiency is displayed automatically; additional proficiencies can be selected. Legacy rules may differ.</p><div class="grid two"><div class="field"><label>Select Language</label><select id="languagePick"></select></div><div class="field"><label>Select Tool</label><select id="toolPick"></select></div></div><div class="grid two" style="margin-top:10px"><button id="addLanguage" type="button">+ Add Language</button><button id="addTool" type="button">+ Add Tool</button></div><h3>Known Languages</h3><div id="languageList" class="checklist"></div><h3>Tool Proficiencies</h3><div id="toolList" class="checklist"></div><p class="hint">Background tools update automatically when you change backgrounds. Your selected languages and tools are included in JSON exports.</p></details><div class="field" style="margin-top:14px"><label>Description / Backstory</label><textarea data-bind="description" placeholder="Character description…"></textarea></div></div><div class="panel"><h2>Dice Roller</h2><div class="row" style="flex-wrap:wrap"><select id="dieSelect" style="max-width:145px"><option value="4">d4</option><option value="6">d6</option><option value="8">d8</option><option value="10">d10</option><option value="12">d12</option><option value="20" selected>d20</option><option value="100">d100</option></select><input id="dieCount" type="number" min="1" max="20" value="1" style="max-width:95px" aria-label="Number of Dice"><input id="dieBonus" type="number" value="0" style="max-width:95px" aria-label="Roll bonus"><button class="primary" id="rollCustom">Roll</button><select id="rollMode" aria-label="D20 roll mode" style="max-width:185px"><option value="normal">Normal</option><option value="adv">Advantage</option><option value="dis">Disadvantage</option></select></div><div class="hint" style="margin-top:8px">Last field: additional modifier. Advantage and Disadvantage apply only to a single d20 roll (including attacks, saves, skills and initiative). Damage dice roll normally.</div><div id="diceStage" class="dice-stage" role="status" aria-live="polite"><span class="hint">Roll any die to see it animate here.</span></div><div id="diceLog" aria-live="polite"></div></div></section>
 <section class="tab hidden" data-section="skills"><div class="panel"><h2>Skill Proficiency / Expertise</h2><div class="hint">None = ability only; Proficient = add proficiency; Expertise = double proficiency. 2024 Exhaustion penalties apply to d20 tests.</div><div class="skills" id="skills"></div></div></section>
 <section class="tab hidden" data-section="combat"><div class="panel"><h2>Hit Points & Resources</h2><div class="row space"><div><span class="hpbig" id="hpDisplay">0 / 0</span> <span class="muted">HP</span></div><span class="pill" id="tempHpDisplay">Temp HP: 0</span></div><div class="meter"><div id="hpMeter" style="width:0%"></div></div><div class="grid four"><div class="field"><label>Maximum HP</label><input type="number" min="0" data-bind="hpMax"></div><div class="field"><label>Current HP</label><input type="number" min="0" data-bind="hpCurrent"></div><div class="field"><label>Temp HP</label><input type="number" min="0" data-bind="tempHp"></div><div class="field"><label>HP Change</label><input type="number" id="hpAmount" min="1" value="5"></div></div><div class="row" style="margin-top:12px;flex-wrap:wrap"><button id="damageBtn" class="danger">Damage</button><button id="healBtn">Healing</button><button id="shortRestBtn" class="primary">Short Rest</button><button id="restBtn">Long Rest</button></div><div class="hint" style="margin-top:9px">Short Rest: spend Hit Dice to heal and recover eligible features. Long Rest: recover HP, eligible Hit Dice, spell slots and long-rest resources. Individual feature rules can differ.</div><div class="grid two" style="margin-top:14px"><div class="field"><label>Spent Hit Dice</label><input type="number" min="0" data-bind="hitDiceSpent"></div><div class="field"><label>Death Saves: Success / Failure</label><div class="row"><input type="number" min="0" max="3" data-bind="deathSuccess" aria-label="Death save success"><input type="number" min="0" max="3" data-bind="deathFail" aria-label="Death save failure"></div></div></div></div><div class="panel" id="restResourcesPanel"><h2>Rest & Feature Resources</h2><p class="hint">Track spent feature uses here. Rests apply the configured recovery rules. You can also add custom resources.</p><div id="restResourceList"></div><div class="row" style="flex-wrap:wrap;margin-top:10px"><button id="addRestResource">+ Custom Resource</button></div><div id="pactRestSlots" style="margin-top:12px"></div></div><div class="panel"><h2>Armor / Movement</h2><div class="grid two"><div class="field"><label>AC Calculation</label><select data-bind="acMode"><option value="unarmored">Unarmored (10 + DEX)</option><option value="light">Light (base + DEX)</option><option value="medium">Medium (base + max 2 DEX)</option><option value="heavy">Heavy (base)</option><option value="fixed">Custom fixed AC</option></select></div><div class="field"><label>Armor Base AC / Fixed AC</label><input type="number" data-bind="armorBase" min="0"></div><div class="field"><label>Shield Bonus</label><input type="number" data-bind="shieldBonus"></div><div class="field"><label>Other AC Bonus</label><input type="number" data-bind="acBonus"></div></div></div><div class="panel"><h2>Conditions</h2><div class="hint">Conditions are tracked manually; not every condition-specific rule is automated.</div><div class="checklist" id="conditions"></div></div><div class="panel"><div class="row space"><h2>Attacks</h2><button id="addAttack">+ Add Attack</button></div><div class="hint">Attack bonus: chosen ability modifier + proficiency (when proficient) + other bonuses. Damage formulas such as 1d8+3 can be rolled.</div><div id="attacks"></div></div></section>
 <section class="tab hidden" data-section="spells"><div class="panel"><h2>Spellcasting</h2><div class="grid two"><div class="field"><label>Spellcasting Ability</label><select data-bind="spellAbility"><option value="">None</option><option value="int">INT</option><option value="wis">WIS</option><option value="cha">CHA</option></select></div><div class="field"><label>Other Spell Attack Bonus</label><input type="number" data-bind="spellBonus"></div><div class="field"><label>Spell Save DC</label><output class="badge" id="spellDc">—</output></div><div class="field"><label>Spell Attack</label><output class="badge" id="spellAttack">—</output></div></div><div class="hint" style="margin-top:12px">Set spell slot totals manually. Pact Magic is tracked separately. The offline catalog is a curated selection, not a complete official spell list.</div><h3>Spell Slots</h3><div id="slots"></div></div><div class="panel"><div class="row space"><h2>Known / Prepared Spells</h2><button id="addSpell">+ Custom / DM-Granted Spell</button></div><div class="panel" style="background:#1b202b;margin:10px 0"><h3>Offline Spell Catalog (SRD-based selection)</h3><div class="grid two"><div class="field"><label>Search Spells</label><input id="spellSearch" placeholder="Magic Missile, Fireball…"></div><div class="field"><label>Level</label><select id="spellLevelFilter"><option value="all">All Levels</option><option value="0">Cantrip</option><option value="1">Level 1</option><option value="2">Level 2</option><option value="3">Level 3</option><option value="4">Level 4</option><option value="5">Level 5</option><option value="6">Level 6</option><option value="7">Level 7</option><option value="8">Level 8</option><option value="9">Level 9</option></select></div></div><div class="hint" id="spellClassNotice"></div><div class="field"><label>Spell</label><select id="spellPicker"></select></div><div id="featSpellPanel" class="panel" style="margin-top:12px;background:#211b30"></div><div id="spellInfo" class="hint" style="margin:9px 0"></div><button id="addCatalogSpell" class="primary">+ Add Spell</button><p class="hint">Only spells verified for your class and accessible spell levels are shown. Magic Initiate grants its own separately selected spells; other special grants remain manual.</p></div><div id="spellsList"></div></div></section>
@@ -256,10 +256,10 @@ function ledgerCharacterSnapshot(){
  const spellModifier=state.spellAbility?a(state.spellAbility):null;
  const spellAttack=spellModifier===null?null:prof()+spellModifier+num(state.spellBonus)+equipment.spellAttack+magic.spellAttack;
  const spellDC=spellModifier===null?null:8+prof()+spellModifier+num(state.spellBonus)+magic.spellDC;
- const ruleDetails=ledgerResolvedEffects();const warnings=[...armor.warnings];
+ const ruleDetails=ledgerResolvedEffects();const senses=ledgerDerivedSenses();const warnings=[...armor.warnings];
  if(armor.disadvantage)warnings.push('Armor or shield proficiency penalties apply to Strength/Dexterity attacks, checks and saves; spellcasting is restricted.');
  return {
-  abilities,ac:ac(),movement,maximumHP,
+  abilities,ac:ac(),movement,maximumHP,senses,
   currentHP:clamp(num(state.hpCurrent),0,maximumHP),
   spellAttack,spellDC,attacks,warnings,
   sources:{equipment,feats,magic,armor,spell,registry:ruleDetails},
@@ -284,9 +284,9 @@ function ledgerRenderSnapshot(){
  '<details><summary>Active rules & warnings ('+d.warnings.length+')</summary>'+
  (d.warnings.length?'<ul>'+d.warnings.map(x=>'<li>'+esc(x)+'</li>').join('')+'</ul>':'<p>No detected armor-rule warnings.</p>')+
  '<p class="hint">'+esc(d.limitations.join(' '))+'</p></details>'+
- '<details><summary>Effect sources ('+d.sources.registry.effects.length+')</summary><ul>'+
+ '<details><summary>Effect sources ('+(d.sources.registry.effects.length+d.senses.length)+')</summary><ul>'+
  d.sources.registry.effects.map(x=>'<li>'+esc(x.source+': '+x.name)+' — '+esc(Object.entries(x.rule).filter(([k])=>k!=='notes').map(([k,v])=>k+': '+(typeof v==='object'?JSON.stringify(v):v)).join(', '))+'</li>').join('')+
- '</ul>'+(d.sources.registry.unsupported.length?'<p class="hint">Items without registered passive rules: '+esc(d.sources.registry.unsupported.join(', '))+'</p>':'')+'</details>';
+ '</ul><h4>Senses & their sources</h4><ul>'+d.senses.map(x=>'<li>'+esc(x.name+' '+x.range+' ft — '+x.source)+'</li>').join('')+'</ul>'+(d.sources.registry.unsupported.length?'<p class="hint">Items without registered passive rules: '+esc(d.sources.registry.unsupported.join(', '))+'</p>':'')+'</details>';
 }
 function ledgerStatBreakdown(){
  const feat=featStatEffects(),item=activeItemEffects(),magic=magicItemExtraEffects();
@@ -369,21 +369,45 @@ function diceMesh(sides){
  let v=[],f=[];
  if(sides===4){v=[[1,1,1],[-1,-1,1],[-1,1,-1],[1,-1,-1]];f=[[0,1,2],[0,3,1],[0,2,3],[1,3,2]];}
  else if(sides===6){v=[[-1,-1,-1],[1,-1,-1],[1,1,-1],[-1,1,-1],[-1,-1,1],[1,-1,1],[1,1,1],[-1,1,1]];f=[[0,3,2,1],[4,5,6,7],[0,1,5,4],[1,2,6,5],[2,3,7,6],[3,0,4,7]];}
- else if(sides===8){v=[[0,0,1.5],[0,0,-1.5],[1,0,0],[0,1,0],[-1,0,0],[0,-1,0]];for(let i=0;i<4;i++){f.push([0,2+i,2+(i+1)%4]);f.push([1,2+(i+1)%4,2+i]);}}
+ else if(sides===8){v=[[0,0,1],[0,0,-1],[1,0,0],[0,1,0],[-1,0,0],[0,-1,0]];for(let i=0;i<4;i++){f.push([0,2+i,2+(i+1)%4]);f.push([1,2+(i+1)%4,2+i]);}}
  else if(sides===10||sides===100){
-   // Ten genuine kite-shaped faces: two staggered polar vertices and a decagonal equator.
-   v=[[0,0,1.32],[0,0,-1.32]];
-   for(let i=0;i<10;i++){const a=i*Math.PI/5;v.push([Math.cos(a),Math.sin(a),i%2===0?.20:-.20]);}
-   for(let i=0;i<10;i++){
-     const a=2+i,b=2+(i+1)%10,c=2+(i+2)%10;
-     f.push(i%2===0?[0,a,b]:[1,a,b]);
+   // Exact convex pentagonal trapezohedron, dual to a pentagonal antiprism.
+   // Polar-dual vertices guarantee every numbered kite is PLANAR.
+   const ring=[];
+   for(let i=0;i<5;i++){
+     const top=i*2*Math.PI/5, bottom=top+Math.PI/5;
+     ring.push([Math.cos(top),Math.sin(top),.52]);
+     ring.push([Math.cos(bottom),Math.sin(bottom),-.52]);
+   }
+   const primal=[[0,2,4,6,8],[9,7,5,3,1]];
+   for(let i=0;i<5;i++){
+     const a=2*i,b=(a+2)%10,c=a+1,d=(a+3)%10;
+     primal.push([a,b,c],[b,d,c]);
+   }
+   const cross=(a,b)=>[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]];
+   const dot=(a,b)=>a.reduce((sum,x,i)=>sum+x*b[i],0);
+   v=primal.map(face=>{
+     const p=ring[face[0]],q=ring[face[1]],r=ring[face[2]];
+     let n=cross(q.map((x,i)=>x-p[i]),r.map((x,i)=>x-p[i]));
+     const center=face.reduce((acc,id)=>acc.map((x,k)=>x+ring[id][k]/face.length),[0,0,0]);
+     if(dot(n,center)<0)n=n.map(x=>-x);
+     const distance=dot(n,p);
+     return n.map(x=>x/distance);
+   });
+   for(let vertex=0;vertex<10;vertex++){
+     const adjacent=primal.map((face,j)=>face.includes(vertex)?j:-1).filter(j=>j>=0);
+     const n=ring[vertex],nl=Math.hypot(...n),axis=n.map(x=>x/nl);
+     const ref=Math.abs(axis[2])<.9?[0,0,1]:[0,1,0];
+     const u=cross(axis,ref),w=cross(axis,u);
+     adjacent.sort((a,b)=>Math.atan2(dot(v[a],w),dot(v[a],u))-Math.atan2(dot(v[b],w),dot(v[b],u)));
+     f.push(adjacent);
    }
  }
  else{
    v=[[-1,phi,0],[1,phi,0],[-1,-phi,0],[1,-phi,0],[0,-1,phi],[0,1,phi],[0,-1,-phi],[0,1,-phi],[phi,0,-1],[phi,0,1],[-phi,0,-1],[-phi,0,1]];
    f=[[0,11,5],[0,5,1],[0,1,7],[0,7,10],[0,10,11],[1,5,9],[5,11,4],[11,10,2],[10,7,6],[7,1,8],[3,9,4],[3,4,2],[3,2,6],[3,6,8],[3,8,9],[4,9,5],[2,4,11],[6,2,10],[8,6,7],[9,8,1]];
    if(sides===12){
-     const centers=f.map(face=>{let p=[0,0,0];face.forEach(i=>v[i].forEach((n,k)=>p[k]+=n/3));let l=Math.hypot(...p);return p.map(x=>x/l*1.4)});
+     const centers=f.map(face=>{let p=[0,0,0];face.forEach(i=>v[i].forEach((n,k)=>p[k]+=n/3));let l=Math.hypot(...p);return p.map(x=>x/l)});
      const pentagons=v.map((point,i)=>{const adjacent=f.map((face,j)=>face.includes(i)?j:-1).filter(j=>j>=0);
        const axis=point.map(x=>x/Math.hypot(...point)),basis=Math.abs(axis[2])<.9?[0,0,1]:[0,1,0];
        const cross=(a,b)=>[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]];
@@ -393,6 +417,7 @@ function diceMesh(sides){
      v=centers;f=pentagons;
    }
  }
+ // Uniform isotropic scaling preserves all face angles and polyhedral symmetry.
  const max=Math.max(...v.map(p=>Math.hypot(...p)));v=v.map(p=>p.map(x=>x/max));
  return {v,f};
 }
@@ -654,15 +679,15 @@ function showScreenDice(sides,results,keptIndex,title,total){
  const canvas=document.createElement('canvas');canvas.style.cssText='width:100%;height:100%;display:block';overlay.appendChild(canvas);document.body.appendChild(overlay);
  const ctx=canvas.getContext('2d');if(!ctx){overlay.remove();return;}
  const dpr=Math.min(devicePixelRatio||1,3),w=innerWidth,h=innerHeight;canvas.width=w*dpr;canvas.height=h*dpr;ctx.setTransform(dpr,0,0,dpr,0,0);
- const expanded=sides===100?results.flatMap(value=>[Math.floor((value-1)/10)*10,(value-1)%10]):results;
+ const expanded=sides===100?results.flatMap(value=>{const digits=value%100;return [Math.floor(digits/10)*10,digits%10];}):results;
  const count=Math.min(expanded.length,12),mesh=diceMesh(sides===100?10:sides),radius=Math.max(24,Math.min(59,w/(count*2.6))),floor=h*.72;
  const dice=expanded.slice(0,count).map((value,i)=>{
   const targetX=w/2+(i-(count-1)/2)*Math.min(115,w/(count+1));
   // Immutable number-to-face mapping. A polygon's label never changes during the roll.
   const isPercentile=sides===100&&i%2===0;
   const faceNumbers=Array.from({length:mesh.f.length},(_,j)=>
-    sides===100?(isPercentile?j*10:j):j+1);
-  const faceIndex=sides===100?(isPercentile?Math.floor(value/10):value):Math.max(0,Math.min(mesh.f.length-1,value-1));
+    sides===100?(isPercentile?String(j*10).padStart(2,'0'):j):(sides===10?j:j+1));
+  const faceIndex=sides===100?(isPercentile?Math.floor(value/10):value):sides===10?(value%10):Math.max(0,Math.min(mesh.f.length-1,value-1));
   const face=mesh.f[faceIndex];let normal=[0,0,0];face.forEach(idx=>mesh.v[idx].forEach((x,k)=>normal[k]+=x/face.length));const len=Math.hypot(...normal)||1;normal=normal.map(x=>x/len);
   // Rotate the selected numbered face toward the camera at the end of the throw.
   const axis=[normal[1],-normal[0],0],axisLen=Math.hypot(...axis);const angle=Math.acos(Math.max(-1,Math.min(1,normal[2])));
@@ -717,6 +742,7 @@ function showScreenDice(sides,results,keptIndex,title,total){
    ctx.restore();
   });
  });
+ if(settled&&(sides===100||sides===10)){ctx.textAlign='center';ctx.font='bold 16px system-ui';ctx.fillStyle='#f4d6a0';ctx.fillText(sides===100?'Percentile: '+results.join(', ')+' (00 + 0 = 100)':'d10: 0 on the die represents 10',w/2,Math.min(h-80,floor+radius*1.7));}
  if(settled){ctx.textAlign='center';ctx.font='bold 23px system-ui';ctx.fillStyle='#ffe2ae';ctx.fillText('Total: '+total,w/2,Math.min(h-54,floor+radius*2.3));}
  if(settled&&critical===1){const t=(elapsed-duration)/1000;if(t<.4){ctx.fillStyle=`rgba(255,208,233,${Math.max(0,.17-t*.4)})`;ctx.fillRect(0,0,w,h);}}
  if(settled&&critical===20){
@@ -984,7 +1010,7 @@ const species=SPECIES_RULES[state.speciesEdition]?.find(x=>x[0]===state.species)
 const details=SPECIES_DETAIL[state.speciesEdition]?.[state.species];const lineage=LINEAGES_2024[state.species]?.find(x=>x[0]===state.speciesLineage);
 const chosenLineage=!!lineage;const lineageTraitNames={Dragonborn:['Draconic Ancestry'],Elf:['Elven Lineage'],Gnome:['Gnomish Lineage'],Goliath:['Giant Ancestry'],Tiefling:['Fiendish Legacy']};const selectedTraitNames=chosenLineage?(lineageTraitNames[state.species]||[]):[];const visibleSpeciesDetails=(details||species?.[1].split(';').slice(1).map(x=>[x.trim(),'Consult the applicable sourcebook for the exact rule.'])||[]).filter(([name])=>!selectedTraitNames.includes(name));
 $('speciesFeatures').innerHTML=species?`<h3>${esc(state.species)} (${state.speciesEdition})</h3><div class="hint" style="margin-bottom:9px">Species Traits: ${esc(chosenLineage?species[1].replace(/Choose (?:draconic ancestry|a Giant Ancestry|Drow, High Elf, or Wood Elf lineage)[^;.]*[.;]?/gi,'').trim():species[1])}</div>${lineage?`<div class="ruleline" style="display:block"><strong style="color:#ffe2a1">${esc(state.speciesLineage)}</strong><div class="hint">${esc(lineage[1])}</div></div>`:''}${visibleSpeciesDetails.map(([name,desc])=>`<div class="ruleline" style="display:block"><strong style="color:#e4c68e">${esc(name)}</strong><div class="hint" style="margin-top:5px">${esc(desc)}</div></div>`).join('')}<div class="hint" style="margin-top:12px">The 2024 species have concise mechanical summaries. Species from other books are catalog entries, not complete rule implementations. Not all species traits automatically change stats. Mixing rules editions may require DM approval.</div>`:'';renderSpeciesBonuses();
-}
+;ledgerRenderFeatureSources()}
 
 
 // Feat selection: separate grants, not overwritten by background or class changes.
@@ -1137,7 +1163,75 @@ let opts=CLASS_OPTION_SETS[cl]||[];if(lev>=(CLASS_OPTION_LEVELS[cl]||1))for(let 
 const sub=CLASS_RULES[cl]?.subs.find(x=>x[0]===state.subclass);if(sub){html+=`<h3>${esc(state.subclass)} – subclass features</h3>`;if(sub[1]?.length){for(const [level,desc] of sub[1].filter(x=>x[0]<=lev))html+=`<div class="ruleline"><span class="pill">Lv ${level}</span><span>${esc(desc)}</span></div>`;}else html+='<p class="hint">A complete feature database is not yet available for this subclass. Some special effects need manual handling.</p>';}
 root.innerHTML=html;
 }
-function renderSenses(){const root=$('classSenses');if(!root)return;let lines=classSenses();root.innerHTML=lines.length?lines.map(s=>`<div class="ruleline">${esc(s)}</div>`).join(''):'<span class="hint">No additional class-granted senses.</span>';}
+// 5.3 — one derived sense list, shared by the Senses panel and Effect Sources.
+// These are explicit catalog facts, not inferred from arbitrary free-text notes.
+
+// 5.4: collective, level-aware feature provenance for ALL catalogued classes,
+// subclasses and species, rather than special-casing an individual ancestry.
+function ledgerFeatureSourcesFor(className,subclassName,speciesName,edition,lineageName,level){
+ const cl=CLASS_RULES[className],sub=cl?.subs.find(x=>x[0]===subclassName);
+ const species=SPECIES_RULES[edition]?.find(x=>x[0]===speciesName);
+ const details=SPECIES_DETAIL[edition]?.[speciesName]||[];
+ const lineage=edition==='2024'?LINEAGES_2024[speciesName]?.find(x=>x[0]===lineageName):null;
+ const sources=[];
+ if(cl)for(const f of ledgerClassFeatureRows(className).filter(x=>x.level<=level))
+  sources.push({type:'Class',source:className,name:f.name,level:f.level,description:'',verified:f.source==='catalog'});
+ if(sub)for(const f of ledgerSubclassFeatureRows(className,sub).filter(x=>x.level<=level))
+  sources.push({type:'Subclass',source:subclassName,name:f.name,level:f.level,description:'',verified:f.verified});
+ if(species){
+  if(details.length)for(const [name,description] of details)
+   sources.push({type:'Species',source:speciesName,name,level:1,description,verified:true});
+  else for(const part of species[1].split(';').map(x=>x.trim()).filter(Boolean))
+   sources.push({type:'Species',source:speciesName,name:part,level:1,description:'',verified:false});
+ }
+ if(lineage)sources.push({type:'Lineage',source:lineageName,name:lineageName,level:1,description:lineage[1],verified:true});
+ return sources;
+}
+function ledgerAllFeatureSources(){
+ return ledgerFeatureSourcesFor(state.className,state.subclass,state.species,state.speciesEdition,state.speciesLineage,clamp(num(state.level,1),1,20));
+}
+function ledgerRenderFeatureSources(){
+ const root=document.getElementById('ledgerFeatureSources');if(!root)return;
+ const sources=ledgerAllFeatureSources(),senses=ledgerDerivedSenses();
+ root.innerHTML='<h3>All Character Feature Sources</h3><p class="hint">Every feature currently catalogued for your class, subclass, species and lineage is listed below. A listed feature is not necessarily automated.</p>'+
+ (sources.length?sources.map(f=>'<div class="ruleline"><span class="pill">'+esc(f.type)+' · Lv '+f.level+'</span><span><strong>'+esc(f.name)+'</strong> <small>('+esc(f.source)+')</small>'+
+ (f.description?'<div class="hint">'+esc(f.description)+'</div>':'')+
+ (!f.verified?'<div class="hint">⚠ Details not verified / incomplete</div>':'')+'</span></div>').join(''):'<p class="hint">Select class and species to see their features.</p>')+
+ '<h3>Derived Senses</h3>'+(senses.length?senses.map(x=>'<div class="ruleline"><span class="pill">'+esc(x.name+(x.range?' '+x.range+' ft':''))+'</span><span>'+esc(x.source)+'</span></div>').join(''):'<p class="hint">No detected special senses.</p>');
+}
+function ledgerPreviewRandomCharacter(){
+ const names=Object.keys(CLASS_RULES),className=names[Math.floor(Math.random()*names.length)];
+ const cl=CLASS_RULES[className],sub=cl.subs[Math.floor(Math.random()*cl.subs.length)];
+ const edition='2024',species=SPECIES_RULES[edition],sp=species[Math.floor(Math.random()*species.length)][0];
+ const lineages=LINEAGES_2024[sp]||[],lineage=lineages.length?lineages[Math.floor(Math.random()*lineages.length)][0]:'';
+ const level=3+Math.floor(Math.random()*18);
+ const entries=ledgerFeatureSourcesFor(className,sub[0],sp,edition,lineage,level);
+ const root=document.getElementById('ledgerRandomPreview');
+ root.innerHTML='<strong>'+esc('Level '+level+' '+sp+(lineage?' ('+lineage+')':'')+' '+className+' — '+sub[0])+'</strong>'+
+ '<p class="hint">Preview only — your saved character has not been changed.</p>'+
+ entries.map(x=>'<div class="ruleline"><span class="pill">'+esc(x.type)+'</span><span>'+esc(x.name)+(x.verified?'':' ⚠ Incomplete')+'</span></div>').join('');
+}
+function ledgerDerivedSenses(){
+ const result=[];
+ const add=(name,range,source,detail='')=>{
+  const key=name.toLowerCase();const existing=result.find(x=>x.name.toLowerCase()===key);
+  if(existing){if(range>existing.range){existing.range=range;existing.source=source;}return;}
+  result.push({name,range,source,detail});
+ };
+ const species=state.species||'',edition=state.speciesEdition||'2024';
+ const row=(edition==='2024'?SPECIES_2024:SPECIES_LEGACY).find(x=>x[0]===species);
+ const traits=String(row?.[1]||'');
+ if(/\bSuperior Darkvision\b/i.test(traits))add('Darkvision',120,'Species: '+species,'Superior Darkvision');
+ else if(/\bDarkvision\b/i.test(traits))add('Darkvision',60,'Species: '+species);
+ // 2024 Drow lineage upgrades Elf Darkvision to 120 feet.
+ if(edition==='2024'&&species==='Elf'&&state.speciesLineage==='Drow')add('Darkvision',120,'Elf lineage: Drow');
+ if(state.className==='Warlock'){
+  if(chosenInvocations().includes("Devil's Sight"))add("Devil's Sight",120,'Warlock invocation: Devil\'s Sight','Normal vision in magical and nonmagical darkness');
+  if(chosenInvocations().includes('Witch Sight'))add('Truesight',30,'Warlock invocation: Witch Sight');
+ }
+ return result;
+}
+function renderSenses(){const root=$('classSenses');if(!root)return;const lines=ledgerDerivedSenses();root.innerHTML=lines.length?lines.map(x=>`<div class="ruleline"><span class="pill">${esc(x.name)}${x.range?' '+x.range+' ft':''}</span><span>${esc(x.source)}${x.detail?' — '+esc(x.detail):''}</span></div>`).join(''):'<span class="hint">No senses granted by selected species, lineage, or supported class features.</span>';}
 $('classChoiceControls').addEventListener('change',e=>{const el=e.target.closest('[data-class-opt]');if(!el)return;let key=el.dataset.classOpt,old=state.classOptions[key];state.classOptions[key]=el.value;if(key.startsWith('inv:')){let choices=chosenInvocations();if(new Set(choices).size!==choices.length){state.classOptions[key]=old||'';toast('An invocation can normally be chosen only once, unless its rules state otherwise.');}}
 persist();renderClassChoices();renderSenses();});
 const originalBuilderRender=renderBuilder;renderBuilder=function(){originalBuilderRender();renderClassChoices();renderSenses();};
@@ -1653,4 +1747,9 @@ document.addEventListener('change',function(event){
  queueMicrotask(function(){try{ledgerRenderSnapshot();}catch(error){console.warn('Unified statistics refresh failed',error);}});
 });
 </script>
-</body></html>
+<script>
+document.addEventListener('DOMContentLoaded',()=>{
+ const btn=document.getElementById('ledgerRandomButton');
+ if(btn)btn.addEventListener('click',ledgerPreviewRandomCharacter);
+});
+</script></body></html>
