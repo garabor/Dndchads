@@ -702,7 +702,7 @@ function showScreenDice(sides,n,mode,title,bonus,penalty,onResolved){
   const speed=5.2+Math.random()*4.0;
   const vx=Math.cos(heading)*speed,vy=Math.sin(heading)*speed;
   // Rotation is coupled to planar travel (rolling rather than falling).
-  velocity[0]=vy/Math.max(4,radius)*2.7;velocity[1]=-vx/Math.max(4,radius)*2.7;velocity[2]=(Math.random()-.5)*.13;
+  velocity[0]=vy/Math.max(4,radius)*.82;velocity[1]=-vx/Math.max(4,radius)*.82;velocity[2]=(Math.random()-.5)*.012;
   return {soundStage:0,targetX,targetY,x,y,vx,vy,orientation,velocity,mesh,faceNumbers,landed:false,flash:0,fragments:null,contactCount:0,sleeping:false,quietFrames:0};
  });
  // Continuous orientation: the same rotation is used throughout flight and landing.
@@ -751,10 +751,10 @@ function showScreenDice(sides,n,mode,title,bonus,penalty,onResolved){
     const linearDrag=Math.pow(.977,hstep),angularDrag=Math.pow(.977,hstep);
     d.vx*=linearDrag;d.vy*=linearDrag;
     // No floating/spinning-in-place: rolling rotation follows actual tabletop displacement.
-    const coupledX=d.vy/Math.max(4,radius)*2.7,coupledY=-d.vx/Math.max(4,radius)*2.7;
+    const coupledX=d.vy/Math.max(4,radius)*.82,coupledY=-d.vx/Math.max(4,radius)*.82;
     d.velocity[0]=d.velocity[0]*.24+coupledX*.76;
     d.velocity[1]=d.velocity[1]*.24+coupledY*.76;
-    d.velocity[2]*=angularDrag;
+    d.velocity[2]*=Math.pow(.89,hstep);
     // Screen boundaries are the edges of the tabletop, not a floor.
     if(d.x<radius){d.x=radius;d.vx=Math.abs(d.vx)*.32;}
     if(d.x>w-radius){d.x=w-radius;d.vx=-Math.abs(d.vx)*.32;}
@@ -803,6 +803,7 @@ function showScreenDice(sides,n,mode,title,bonus,penalty,onResolved){
   }
   const breaking=settled&&critical===1&&i===shatterIndex;
   const breakT=breaking?(elapsed-duration)/1000:0;
+  const crackPhase=breaking?Math.min(1,Math.max(0,breakT/.68)):0;
   ctx.fillStyle='#03020b80';ctx.beginPath();ctx.ellipse(d.x,d.y+radius*.65,radius*1.04,radius*.26,0,0,Math.PI*2);ctx.fill();
   const verts=d.mesh.v.map(p=>{const q=rotate(p,d);return {x:d.x+q[0]*radius,y:d.y+q[1]*radius,z:q[2],q};});
   const faces=[];
@@ -820,8 +821,30 @@ function showScreenDice(sides,n,mode,title,bonus,penalty,onResolved){
       spin:(Math.random()-.5)*8,shift:Math.random()*.18}));
   }
   if(breaking){
-    const t=Math.max(0,breakT),fade=Math.max(0,1-t/1.65);
-    if(fade>0)d.fragments.forEach(frag=>{
+    // First the intact die develops branching, jagged fractures; fragments only
+    // separate after the crack has spread across the visible crystal.
+    const t=Math.max(0,breakT-.68),fade=Math.max(0,1-t/1.55);
+    if(breakT<.68){
+      faces.forEach(f=>drawCrystalFace(ctx,f,d,radius));
+      ctx.save();ctx.beginPath();
+      faces.forEach(f=>{ctx.moveTo(f.pts[0].x,f.pts[0].y);for(let q=1;q<f.pts.length;q++)ctx.lineTo(f.pts[q].x,f.pts[q].y);ctx.closePath();});
+      ctx.clip();ctx.lineWidth=Math.max(1.1,radius*.035);ctx.strokeStyle='#ffe0f1';ctx.shadowColor='#ff5d9e';ctx.shadowBlur=5+12*crackPhase;
+      const segments=20;
+      for(let k=0;k<segments;k++){
+        const frag=d.fragments[k],a=frag.angle,inner=frag.inner*.38,outer=frag.outer*.92;
+        const length=Math.max(0,Math.min(1,crackPhase*1.55-k*.012));
+        if(!length)continue;
+        const steps=5;ctx.beginPath();
+        for(let j=0;j<=steps;j++){
+          const p=j/steps*length,rad=inner+(outer-inner)*p;
+          const jitter=j===0?0:Math.sin(k*17.71+j*29.37)*radius*.10*p;
+          const px=d.x+Math.cos(a)*rad+Math.cos(a+Math.PI/2)*jitter;
+          const py=d.y+Math.sin(a)*rad+Math.sin(a+Math.PI/2)*jitter;
+          if(j===0)ctx.moveTo(px,py);else ctx.lineTo(px,py);
+        }ctx.stroke();
+      }
+      ctx.restore();
+    }else if(fade>0)d.fragments.forEach(frag=>{
       const a=frag.angle,b=frag.next,mid=(a+b)/2;
       ctx.save();ctx.globalAlpha=fade;
       ctx.translate(d.x+frag.vx*t,d.y+frag.vy*t+110*t*t);
@@ -853,7 +876,7 @@ function showScreenDice(sides,n,mode,title,bonus,penalty,onResolved){
    ctx.restore();
   }
  }
- if(settled&&critical===1){const t=(elapsed-duration)/1000;if(t<.4){ctx.fillStyle=`rgba(255,208,233,${Math.max(0,.17-t*.4)})`;ctx.fillRect(0,0,w,h);}}
+ if(settled&&critical===1){const t=(elapsed-duration)/1000;if(t>.68&&t<1.08){ctx.fillStyle=`rgba(255,208,233,${Math.max(0,.17-t*.4)})`;ctx.fillRect(0,0,w,h);}}
  if(settled&&critical===20){
   const t=(elapsed-duration)/1000;
   if(t<1.7){if(!frame.stormBolts){frame.stormBolts=makeStormBolts(w,h);try { recordedSound('thunder'); } catch(e) { console.warn('Thunder recording unavailable',e); }}
