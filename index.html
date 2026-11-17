@@ -699,15 +699,15 @@ function showScreenDice(sides,n,mode,title,bonus,penalty,onResolved){
   const x=Math.max(radius,Math.min(w-radius,targetX+Math.cos(angle)*travel));
   const y=Math.max(radius,Math.min(h-radius,targetY+Math.sin(angle)*travel));
   const heading=angle+Math.PI+(Math.random()-.5)*1.4;
-  const speed=5.2+Math.random()*4.0;
+  const speed=3.4+Math.random()*2.8;
   const vx=Math.cos(heading)*speed,vy=Math.sin(heading)*speed;
   // Rotation is coupled to planar travel (rolling rather than falling).
-  velocity[0]=vy/Math.max(4,radius)*.82;velocity[1]=-vx/Math.max(4,radius)*.82;velocity[2]=(Math.random()-.5)*.012;
+  velocity[0]=vy/Math.max(4,radius)*.95;velocity[1]=-vx/Math.max(4,radius)*.95;velocity[2]=(Math.random()-.5)*.003;
   return {soundStage:0,targetX,targetY,x,y,vx,vy,orientation,velocity,mesh,faceNumbers,landed:false,flash:0,fragments:null,contactCount:0,sleeping:false,quietFrames:0};
  });
  // Continuous orientation: the same rotation is used throughout flight and landing.
  const rotate=(p,d)=>{let [x,y,z]=p;let c=Math.cos(d.orientation[0]),sn=Math.sin(d.orientation[0]);[y,z]=[y*c-z*sn,y*sn+z*c];c=Math.cos(d.orientation[1]);sn=Math.sin(d.orientation[1]);[x,z]=[x*c+z*sn,-x*sn+z*c];c=Math.cos(d.orientation[2]);sn=Math.sin(d.orientation[2]);return [x*c-y*sn,x*sn+y*c,z]};
- const start=performance.now(),duration=4700;
+ const start=performance.now(),duration=4600;
  let resolved=false,results=[],keptIndex=-1,total=0,critical=null,shatterIndex=-1;
  const faceValue=(d)=>{
   let best=-Infinity,index=0;
@@ -748,12 +748,16 @@ function showScreenDice(sides,n,mode,title,bonus,penalty,onResolved){
     d.x+=d.vx*hstep;d.y+=d.vy*hstep;
     // Orientation is integrated only from motion; prevents a hovering stationary spin.
     for(let k=0;k<3;k++)d.orientation[k]+=d.velocity[k]*hstep;
-    const linearDrag=Math.pow(.977,hstep),angularDrag=Math.pow(.977,hstep);
+    // Tabletop rolling resistance: a short energetic roll, then decisive slowing.
+    // More friction at low speeds prevents the long, ice-like glide.
+    const speedNow=Math.hypot(d.vx,d.vy);
+    const resistance=(speedNow>2.3?.963:speedNow>.8?.937:.895);
+    const linearDrag=Math.pow(resistance,hstep);
     d.vx*=linearDrag;d.vy*=linearDrag;
     // No floating/spinning-in-place: rolling rotation follows actual tabletop displacement.
-    const coupledX=d.vy/Math.max(4,radius)*.82,coupledY=-d.vx/Math.max(4,radius)*.82;
-    d.velocity[0]=d.velocity[0]*.24+coupledX*.76;
-    d.velocity[1]=d.velocity[1]*.24+coupledY*.76;
+    const coupledX=d.vy/Math.max(4,radius)*.95,coupledY=-d.vx/Math.max(4,radius)*.95;
+    d.velocity[0]=coupledX;
+    d.velocity[1]=coupledY;
     d.velocity[2]*=Math.pow(.89,hstep);
     // Screen boundaries are the edges of the tabletop, not a floor.
     if(d.x<radius){d.x=radius;d.vx=Math.abs(d.vx)*.32;}
@@ -761,7 +765,7 @@ function showScreenDice(sides,n,mode,title,bonus,penalty,onResolved){
     if(d.y<radius){d.y=radius;d.vy=Math.abs(d.vy)*.32;}
     if(d.y>h-radius){d.y=h-radius;d.vy=-Math.abs(d.vy)*.32;}
     const linearSpeed=Math.hypot(d.vx,d.vy),angularSpeed=Math.hypot(...d.velocity);
-    if(linearSpeed<.075&&angularSpeed<.018){
+    if(linearSpeed<.12&&angularSpeed<.025){
      d.quietFrames++;
      if(d.quietFrames>=9){d.sleeping=true;d.vx=0;d.vy=0;d.velocity=[0,0,0];}
     }else d.quietFrames=0;
@@ -803,18 +807,18 @@ function showScreenDice(sides,n,mode,title,bonus,penalty,onResolved){
   }
   const breaking=settled&&critical===1&&i===shatterIndex;
   const breakT=breaking?(elapsed-duration)/1000:0;
-  const crackPhase=breaking?Math.min(1,Math.max(0,breakT/.68)):0;
+  const crackPhase=breaking?Math.min(1,Math.max(0,breakT/2)):0;
   ctx.fillStyle='#03020b80';ctx.beginPath();ctx.ellipse(d.x,d.y+radius*.65,radius*1.04,radius*.26,0,0,Math.PI*2);ctx.fill();
   const verts=d.mesh.v.map(p=>{const q=rotate(p,d);return {x:d.x+q[0]*radius,y:d.y+q[1]*radius,z:q[2],q};});
   const faces=[];
   d.mesh.f.forEach((face,j)=>{const pts=face.map(idx=>verts[idx]),a=pts[0].q,b=pts[1].q,c=pts[2].q,u=b.map((v,k)=>v-a[k]),v=c.map((v,k)=>v-a[k]);let n=[u[1]*v[2]-u[2]*v[1],u[2]*v[0]-u[0]*v[2],u[0]*v[1]-u[1]*v[0]];const center=pts.reduce((p,q)=>p.map((x,k)=>x+q.q[k]/pts.length),[0,0,0]);if(n.reduce((z,x,k)=>z+x*center[k],0)<0)n=n.map(x=>-x);const nl=Math.hypot(...n)||1;n=n.map(x=>x/nl);if(n[2]<.045&&!breaking)return;faces.push({pts,n,j,depth:center[2],cx:pts.reduce((z,p)=>z+p.x,0)/pts.length,cy:pts.reduce((z,p)=>z+p.y,0)/pts.length});});
   faces.sort((a,b)=>a.depth-b.depth);
-  // A natural-20-piece shatter: irregular Voronoi-like radial wedges cut across
+  // A four-piece shatter: irregular Voronoi-like radial wedges cut across
   // the complete rendered die, NOT one fragment per numbered face.
   if(breaking&&!d.fragments){
     const seed=Math.random()*Math.PI*2;
-    const cuts=Array.from({length:20},(_,k)=>seed+k*Math.PI/10+(Math.random()-.5)*.13).sort((a,b)=>a-b);
-    d.fragments=cuts.map((angle,k)=>({angle,next:cuts[(k+1)%20]+(k===19?Math.PI*2:0),
+    const cuts=Array.from({length:4},(_,k)=>seed+k*Math.PI/2+(Math.random()-.5)*.38).sort((a,b)=>a-b);
+    d.fragments=cuts.map((angle,k)=>({angle,next:cuts[(k+1)%4]+(k===3?Math.PI*2:0),
       inner:radius*(.12+Math.random()*.23),outer:radius*(1.05+Math.random()*.30),
       vx:Math.cos(angle+.12)*(.65+Math.random()*.85)*radius*2.6,
       vy:Math.sin(angle+.12)*(.65+Math.random()*.85)*radius*2.6,
@@ -823,16 +827,16 @@ function showScreenDice(sides,n,mode,title,bonus,penalty,onResolved){
   if(breaking){
     // First the intact die develops branching, jagged fractures; fragments only
     // separate after the crack has spread across the visible crystal.
-    const t=Math.max(0,breakT-.68),fade=Math.max(0,1-t/1.55);
-    if(breakT<.68){
+    const t=Math.max(0,breakT-2),fade=Math.max(0,1-t/1.6);
+    if(breakT<2){
       faces.forEach(f=>drawCrystalFace(ctx,f,d,radius));
       ctx.save();ctx.beginPath();
       faces.forEach(f=>{ctx.moveTo(f.pts[0].x,f.pts[0].y);for(let q=1;q<f.pts.length;q++)ctx.lineTo(f.pts[q].x,f.pts[q].y);ctx.closePath();});
       ctx.clip();ctx.lineWidth=Math.max(1.1,radius*.035);ctx.strokeStyle='#ffe0f1';ctx.shadowColor='#ff5d9e';ctx.shadowBlur=5+12*crackPhase;
-      const segments=20;
+      const segments=4;
       for(let k=0;k<segments;k++){
         const frag=d.fragments[k],a=frag.angle,inner=frag.inner*.38,outer=frag.outer*.92;
-        const length=Math.max(0,Math.min(1,crackPhase*1.55-k*.012));
+        const length=Math.max(0,Math.min(1,crackPhase*1.25-k*.035));
         if(!length)continue;
         const steps=5;ctx.beginPath();
         for(let j=0;j<=steps;j++){
@@ -866,9 +870,9 @@ function showScreenDice(sides,n,mode,title,bonus,penalty,onResolved){
  if(settled){ctx.textAlign='center';ctx.font='bold 23px system-ui';ctx.fillStyle='#ffe2ae';ctx.fillText('Total: '+total,w/2,h-42);}
  if(settled&&(critical===1||critical===20)){
   const t=(elapsed-duration)/1000;
-  if(t<1.7){
+  if(t<3.8){
    ctx.save();ctx.textAlign='center';ctx.textBaseline='middle';
-   const alpha=Math.min(1,Math.max(0,t*6)) * Math.min(1,Math.max(0,(1.7-t)*3));
+   const alpha=Math.min(1,Math.max(0,t*6)) * Math.min(1,Math.max(0,(3.8-t)*3));
    ctx.globalAlpha=alpha;ctx.font=`bold ${Math.min(38,Math.max(21,w*.065))}px Georgia,serif`;
    ctx.shadowBlur=22;ctx.shadowColor=critical===20?'#ffe9a3':'#ff6b9e';
    ctx.fillStyle=critical===20?'#ffe5a2':'#ff9db9';
@@ -876,14 +880,14 @@ function showScreenDice(sides,n,mode,title,bonus,penalty,onResolved){
    ctx.restore();
   }
  }
- if(settled&&critical===1){const t=(elapsed-duration)/1000;if(t>.68&&t<1.08){ctx.fillStyle=`rgba(255,208,233,${Math.max(0,.17-t*.4)})`;ctx.fillRect(0,0,w,h);}}
+ if(settled&&critical===1){const t=(elapsed-duration)/1000;if(t>2&&t<2.4){ctx.fillStyle=`rgba(255,208,233,${Math.max(0,.17-t*.4)})`;ctx.fillRect(0,0,w,h);}}
  if(settled&&critical===20){
   const t=(elapsed-duration)/1000;
   if(t<1.7){if(!frame.stormBolts){frame.stormBolts=makeStormBolts(w,h);try { recordedSound('thunder'); } catch(e) { console.warn('Thunder recording unavailable',e); }}
    drawStorm(ctx,w,h,t,frame.stormBolts);
   }
  }
- if(elapsed<duration+(critical===20?3600:1900))activeDiceAnimation=requestAnimationFrame(frame);else{overlay.remove();activeDiceAnimation=null;}
+ if(elapsed<duration+(critical===20?3600:critical===1?4100:1900))activeDiceAnimation=requestAnimationFrame(frame);else{overlay.remove();activeDiceAnimation=null;}
  }catch(error){console.error('3D dice renderer:',error);if(!resolved)finish();overlay.remove();activeDiceAnimation=null;toast('Dice rolled: '+total);}
  }
  activeDiceAnimation=requestAnimationFrame(frame);
