@@ -699,7 +699,7 @@ function showScreenDice(sides,n,mode,title,bonus,penalty,onResolved){
   const x=Math.max(radius,Math.min(w-radius,targetX+Math.cos(angle)*travel));
   const y=Math.max(radius,Math.min(h-radius,targetY+Math.sin(angle)*travel));
   const heading=angle+Math.PI+(Math.random()-.5)*1.4;
-  const speed=3.4+Math.random()*2.8;
+  const speed=(3.4+Math.random()*2.8)*7; // Sevenfold initial throw momentum (v7.2).
   const vx=Math.cos(heading)*speed,vy=Math.sin(heading)*speed;
   // Rotation is coupled to planar travel (rolling rather than falling).
   velocity[0]=vy/Math.max(4,radius)*.95;velocity[1]=-vx/Math.max(4,radius)*.95;velocity[2]=(Math.random()-.5)*.003;
@@ -832,20 +832,63 @@ function showScreenDice(sides,n,mode,title,bonus,penalty,onResolved){
       faces.forEach(f=>drawCrystalFace(ctx,f,d,radius));
       ctx.save();ctx.beginPath();
       faces.forEach(f=>{ctx.moveTo(f.pts[0].x,f.pts[0].y);for(let q=1;q<f.pts.length;q++)ctx.lineTo(f.pts[q].x,f.pts[q].y);ctx.closePath();});
-      ctx.clip();ctx.lineWidth=Math.max(1.1,radius*.035);ctx.strokeStyle='#ffe0f1';ctx.shadowColor='#ff5d9e';ctx.shadowBlur=5+12*crackPhase;
-      const segments=4;
-      for(let k=0;k<segments;k++){
-        const frag=d.fragments[k],a=frag.angle,inner=frag.inner*.38,outer=frag.outer*.92;
-        const length=Math.max(0,Math.min(1,crackPhase*1.25-k*.035));
-        if(!length)continue;
-        const steps=5;ctx.beginPath();
-        for(let j=0;j<=steps;j++){
-          const p=j/steps*length,rad=inner+(outer-inner)*p;
-          const jitter=j===0?0:Math.sin(k*17.71+j*29.37)*radius*.10*p;
-          const px=d.x+Math.cos(a)*rad+Math.cos(a+Math.PI/2)*jitter;
-          const py=d.y+Math.sin(a)*rad+Math.sin(a+Math.PI/2)*jitter;
-          if(j===0)ctx.moveTo(px,py);else ctx.lineTo(px,py);
-        }ctx.stroke();
+      ctx.clip();
+      // Earthquake-style fracture: a dark, uneven fault opens first, then
+      // pale crystalline edges and smaller branching cracks spread outward.
+      // Fixed seeded geometry prevents cracks from flickering between frames.
+      if(!d.quakeFaults){
+        const rand=(seed=>()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296;})(Math.floor(Math.random()*4294967295));
+        d.quakeFaults=Array.from({length:4},(_,k)=>{
+          const angle=d.fragments[k].angle;
+          const points=Array.from({length:11},(_,j)=>{
+            const f=j/10,rad=radius*(.06+1.22*f);
+            const wobble=(rand()-.5)*radius*(.14+.22*f);
+            return {x:Math.cos(angle)*rad-Math.sin(angle)*wobble,y:Math.sin(angle)*rad+Math.cos(angle)*wobble};
+          });
+          const branches=[3,5,7].map((at,j)=>{
+            const base=points[at],direction=angle+(j%2?1:-1)*(0.75+rand()*.55);
+            return Array.from({length:5},(_,q)=>{
+              const f=q/4,dist=radius*(.12+.33*f),offset=(rand()-.5)*radius*.10;
+              return {x:base.x+Math.cos(direction)*dist*f-Math.sin(direction)*offset,
+                y:base.y+Math.sin(direction)*dist*f+Math.cos(direction)*offset};
+            });
+          });
+          return {points,branches};
+        });
+      }
+      const trace=(points,fraction)=>{
+        const segments=(points.length-1)*Math.max(0,Math.min(1,fraction));
+        if(segments<=0)return false;
+        ctx.beginPath();ctx.moveTo(d.x+points[0].x,d.y+points[0].y);
+        for(let p=1;p<=Math.ceil(segments);p++){
+          const t=Math.min(1,segments-(p-1));
+          const prev=points[p-1],next=points[Math.min(p,points.length-1)];
+          ctx.lineTo(d.x+prev.x+(next.x-prev.x)*t,d.y+prev.y+(next.y-prev.y)*t);
+        }
+        return true;
+      };
+      d.quakeFaults.forEach((fault,k)=>{
+        const growth=Math.max(0,Math.min(1,(crackPhase-k*.085)*1.42));
+        if(!growth)return;
+        if(trace(fault.points,growth)){
+          ctx.lineJoin='round';ctx.lineCap='round';
+          // Wide dark rift, with a bright uneven broken-stone edge.
+          ctx.strokeStyle='#100719';ctx.lineWidth=radius*(.045+.095*growth);ctx.shadowBlur=0;ctx.stroke();
+          ctx.strokeStyle='#cdb8e1';ctx.lineWidth=radius*.029;ctx.shadowColor='#e7c4ff';ctx.shadowBlur=radius*.11;ctx.stroke();
+        }
+        fault.branches.forEach((branch,j)=>{
+          const branchGrowth=Math.max(0,Math.min(1,(growth-(.28+j*.18))*2.3));
+          if(!trace(branch,branchGrowth))return;
+          ctx.shadowBlur=0;ctx.strokeStyle='#190c26';ctx.lineWidth=radius*(.035-j*.005);ctx.stroke();
+          ctx.strokeStyle='#b9a2ce';ctx.lineWidth=Math.max(.7,radius*.013);ctx.stroke();
+        });
+      });
+      // Dust flecks and a restrained tremor reinforce the stone splitting.
+      const tremor=Math.sin(breakT*43)*radius*.018*Math.sin(Math.PI*crackPhase);
+      ctx.fillStyle=`rgba(218,188,234,${.25+.45*crackPhase})`;
+      for(let q=0;q<14;q++){
+        const a=q*2.39996,dist=radius*(.18+((q*7)%13)/13*.72)*crackPhase;
+        ctx.beginPath();ctx.arc(d.x+Math.cos(a)*dist+tremor,d.y+Math.sin(a)*dist-tremor,Math.max(.5,radius*.009),0,Math.PI*2);ctx.fill();
       }
       ctx.restore();
     }else if(fade>0)d.fragments.forEach(frag=>{
