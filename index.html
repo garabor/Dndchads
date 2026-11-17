@@ -227,89 +227,56 @@ function diceMesh(sides){
  const max=Math.max(...v.map(p=>Math.hypot(...p)));v=v.map(p=>p.map(x=>x/max));
  return {v,f};
 }
+let diceAudioContext=null;
+function diceSound(kind){try{const Audio=window.AudioContext||window.webkitAudioContext;if(!Audio)return;const ac=diceAudioContext||(diceAudioContext=new Audio());if(ac.state==='suspended')ac.resume();const t=ac.currentTime,osc=ac.createOscillator(),gain=ac.createGain(),filter=ac.createBiquadFilter();osc.type=kind==='thunder'?'sawtooth':'triangle';filter.type='lowpass';filter.frequency.value=kind==='thunder'?420:kind==='crack'?1700:750;osc.frequency.setValueAtTime(kind==='thunder'?90:kind==='crack'?420:130,t);osc.frequency.exponentialRampToValueAtTime(kind==='thunder'?38:kind==='crack'?75:58,t+.24);gain.gain.setValueAtTime(.0001,t);gain.gain.exponentialRampToValueAtTime(kind==='thunder'?.18:.09,t+.015);gain.gain.exponentialRampToValueAtTime(.0001,t+(kind==='thunder'?.65:.22));osc.connect(filter);filter.connect(gain);gain.connect(ac.destination);osc.start(t);osc.stop(t+(kind==='thunder'?.7:.25));}catch(e){}}
 function showScreenDice(sides,results,keptIndex,title,total){
- const seq=++diceThrowSequence;
- if(activeDiceAnimation)cancelAnimationFrame(activeDiceAnimation);
+ const seq=++diceThrowSequence;if(activeDiceAnimation)cancelAnimationFrame(activeDiceAnimation);
  document.getElementById('diceThrowOverlay')?.remove();
  const overlay=document.createElement('div');overlay.id='diceThrowOverlay';
- overlay.style.cssText='position:fixed;inset:0;z-index:99999;pointer-events:none;background:radial-gradient(ellipse at 50% 65%,#241535a8,#07051155);overflow:hidden';
- const heading=document.createElement('div');heading.className='throw-caption';
- heading.textContent=title+' · 3D Dice Roll';overlay.appendChild(heading);
- const canvas=document.createElement('canvas');canvas.style.cssText='width:100%;height:100%;display:block';overlay.appendChild(canvas);
- document.body.appendChild(overlay);
+ overlay.style.cssText='position:fixed;inset:0;z-index:99999;pointer-events:none;background:radial-gradient(ellipse at 50% 65%,#2c1940bb,#07051177);overflow:hidden';
+ const heading=document.createElement('div');heading.className='throw-caption';heading.textContent=title+' · 3D Dice Roll';overlay.appendChild(heading);
+ const canvas=document.createElement('canvas');canvas.style.cssText='width:100%;height:100%;display:block';overlay.appendChild(canvas);document.body.appendChild(overlay);
  const ctx=canvas.getContext('2d');if(!ctx){overlay.remove();return;}
- let w=0,h=0,dpr=1;
- function resize(){dpr=Math.min(devicePixelRatio||1,2);w=innerWidth;h=innerHeight;canvas.width=Math.round(w*dpr);canvas.height=Math.round(h*dpr);ctx.setTransform(dpr,0,0,dpr,0,0);}
- resize();
+ const dpr=Math.min(devicePixelRatio||1,2),w=innerWidth,h=innerHeight;canvas.width=w*dpr;canvas.height=h*dpr;ctx.setTransform(dpr,0,0,dpr,0,0);
  const expanded=sides===100?results.flatMap(value=>[Math.floor((value-1)/10)*10,(value-1)%10]):results;
- const count=Math.min(expanded.length,16),mesh=diceMesh(sides===100?10:sides);
+ const count=Math.min(expanded.length,12),mesh=diceMesh(sides===100?10:sides),radius=Math.max(24,Math.min(59,w/(count*2.6))),floor=h*.72;
  const dice=expanded.slice(0,count).map((value,i)=>{
-  const spacing=Math.min(112,w/(count+1)),endX=(i-(count-1)/2)*spacing;
-  return {value,endX,x:endX+(Math.random()-.5)*w*.7,y:-100-Math.random()*200,z:40+Math.random()*100,
-    vx:(endX-(Math.random()-.5)*w*.4)*.012,vy:0,vz:0,
-    rx:Math.random()*6,ry:Math.random()*6,rz:Math.random()*6,
-    sx:6+Math.random()*9,sy:7+Math.random()*10,sz:5+Math.random()*9,mesh};
+  const targetX=w/2+(i-(count-1)/2)*Math.min(115,w/(count+1));
+  const faceIndex=(Math.max(1,value)-1)%mesh.f.length;
+  const face=mesh.f[faceIndex];let normal=[0,0,0];face.forEach(idx=>mesh.v[idx].forEach((x,k)=>normal[k]+=x/face.length));const len=Math.hypot(...normal)||1;normal=normal.map(x=>x/len);
+  // Rotate the selected numbered face toward the camera at the end of the throw.
+  const axis=[normal[1],-normal[0],0],axisLen=Math.hypot(...axis);const angle=Math.acos(Math.max(-1,Math.min(1,normal[2])));
+  return {value,targetX,x:targetX+(Math.random()-.5)*w*.5,y:-radius*3-Math.random()*100,vy:0,spin:[Math.random()*6,Math.random()*6,Math.random()*6],axis:axisLen?axis.map(x=>x/axisLen):[1,0,0],angle:normal[2]<-.999?Math.PI:angle,mesh,faceIndex,landed:false,flash:0};
  });
- const start=performance.now(),duration=2400;
- const rotate=(p,d)=>{
-  let [x,y,z]=p;let c=Math.cos(d.rx),s=Math.sin(d.rx);[y,z]=[y*c-z*s,y*s+z*c];
-  c=Math.cos(d.ry);s=Math.sin(d.ry);[x,z]=[x*c+z*s,-x*s+z*c];
-  c=Math.cos(d.rz);s=Math.sin(d.rz);return [x*c-y*s,x*s+y*c,z];
- };
- function render(now){
-  if(seq!==diceThrowSequence||!overlay.isConnected)return;
-  const elapsed=now-start,dt=Math.min(.034,(now-(render.prev||now))/1000);render.prev=now;
-  ctx.clearRect(0,0,w,h);
-  const floor=h*.76, radius=Math.max(28,Math.min(56,w/(count*2.7)));
-  ctx.fillStyle='#130e22aa';ctx.beginPath();ctx.ellipse(w/2,floor+radius*.65,Math.min(w*.46,450),radius*.48,0,0,Math.PI*2);ctx.fill();
-  const polygons=[];
-  dice.forEach((d,i)=>{
-   if(elapsed<duration){
-    d.vy+=1100*dt;d.y+=d.vy*dt;d.x+=d.vx*dt*60;d.z+=d.vz*dt*60;
-    const ground=floor-radius*1.15;
-    if(d.y>ground){d.y=ground;d.vy=-Math.abs(d.vy)*.38;d.vx*=.67;d.sx*=.72;d.sy*=.72;d.sz*=.72;}
-    if(d.x<radius||d.x>w-radius){d.x=Math.max(radius,Math.min(w-radius,d.x));d.vx*=-.55;}
-    d.rx+=d.sx*dt;d.ry+=d.sy*dt;d.rz+=d.sz*dt;
-   }else{d.x+=(w/2+d.endX-d.x)*.13;d.y+=(floor-radius*1.15-d.y)*.13;}
-   const verts=d.mesh.v.map(p=>{
-    const q=rotate(p,d),perspective=3.6/(3.6-q[2]*.7);
-    return [d.x+q[0]*radius*perspective,d.y+q[1]*radius*perspective,q[2],q];
-   });
-   d.mesh.f.forEach((face,j)=>{
-    const pts=face.map(idx=>verts[idx]),a=pts[0][3],b=pts[1][3],c=pts[2][3];
-    const u=b.map((v,k)=>v-a[k]),v=c.map((v,k)=>v-a[k]);
-    const normal=[u[1]*v[2]-u[2]*v[1],u[2]*v[0]-u[0]*v[2],u[0]*v[1]-u[1]*v[0]];
-    const center=pts.reduce((acc,p)=>acc.map((x,k)=>x+p[3][k]/pts.length),[0,0,0]);
-    if(normal.reduce((sum,n,k)=>sum+n*center[k],0)<0)normal.forEach((n,k)=>normal[k]=-n);
-    const len=Math.hypot(...normal)||1,brightness=Math.max(.16,Math.min(1,(normal[0]*-.4+normal[1]*-.5+normal[2]*.8)/len*.55+.48));
-    polygons.push({pts,depth:center[2]+d.z*.001,brightness,i,j});
-   });
+ const rotateAxis=(p,axis,angle)=>{const c=Math.cos(angle),sn=Math.sin(angle),dot=p.reduce((a,x,i)=>a+x*axis[i],0),cross=[axis[1]*p[2]-axis[2]*p[1],axis[2]*p[0]-axis[0]*p[2],axis[0]*p[1]-axis[1]*p[0]];return p.map((x,i)=>x*c+cross[i]*sn+axis[i]*dot*(1-c));};
+ const rotate=(p,d,settle)=>{if(settle)return rotateAxis(p,d.axis,d.angle);let [x,y,z]=p;let c=Math.cos(d.spin[0]),sn=Math.sin(d.spin[0]);[y,z]=[y*c-z*sn,y*sn+z*c];c=Math.cos(d.spin[1]);sn=Math.sin(d.spin[1]);[x,z]=[x*c+z*sn,-x*sn+z*c];c=Math.cos(d.spin[2]);sn=Math.sin(d.spin[2]);return [x*c-y*sn,x*sn+y*c,z]};
+ const start=performance.now(),duration=1900,critical=sides===20&&(keptIndex>=0?results[keptIndex]:results.length===1?results[0]:null);
+ const shards=Array.from({length:42},(_,i)=>({angle:Math.random()*Math.PI*2,speed:100+Math.random()*330,size:4+Math.random()*12,rot:Math.random()*6}));
+ let soundAt=0;
+ diceSound('roll');
+ function frame(now){if(seq!==diceThrowSequence||!overlay.isConnected)return;const elapsed=now-start,progress=Math.min(1,elapsed/duration),settled=progress>=1;
+ ctx.clearRect(0,0,w,h);
+ const glow=ctx.createRadialGradient(w/2,floor,0,w/2,floor,w*.55);glow.addColorStop(0,'#533b6b44');glow.addColorStop(1,'#00000000');ctx.fillStyle=glow;ctx.fillRect(0,0,w,h);
+ dice.forEach((d,i)=>{
+  if(!settled){const t=Math.min(1,progress*1.25);d.x+=(d.targetX-d.x)*.08;d.y=-radius*2+(floor-radius*.95+radius*2)*(1-Math.pow(1-t,2));d.y-=Math.abs(Math.sin(t*11))*radius*.6*(1-t);d.spin=d.spin.map((v,k)=>v+(k+1)*.085*(1-t*.8));if(t>.48&&now-soundAt>190){diceSound('bounce');soundAt=now;}}
+  else{d.x+=(d.targetX-d.x)*.12;d.y+=(floor-radius*.95-d.y)*.12;}
+  ctx.fillStyle='#03020b80';ctx.beginPath();ctx.ellipse(d.x,floor+radius*.65,radius*1.04,radius*.26,0,0,Math.PI*2);ctx.fill();
+  const verts=d.mesh.v.map(p=>{const q=rotate(p,d,settled),perspective=3.7/(3.7-q[2]*.65);return {x:d.x+q[0]*radius*perspective,y:d.y+q[1]*radius*perspective,z:q[2],q};});
+  const faces=[];
+  d.mesh.f.forEach((face,j)=>{const pts=face.map(idx=>verts[idx]),a=pts[0].q,b=pts[1].q,c=pts[2].q,u=b.map((v,k)=>v-a[k]),v=c.map((v,k)=>v-a[k]);let n=[u[1]*v[2]-u[2]*v[1],u[2]*v[0]-u[0]*v[2],u[0]*v[1]-u[1]*v[0]];const center=pts.reduce((p,q)=>p.map((x,k)=>x+q.q[k]/pts.length),[0,0,0]);if(n.reduce((z,x,k)=>z+x*center[k],0)<0)n=n.map(x=>-x);const nl=Math.hypot(...n)||1;n=n.map(x=>x/nl);if(n[2]<.045)return;faces.push({pts,n,j,depth:center[2],cx:pts.reduce((z,p)=>z+p.x,0)/pts.length,cy:pts.reduce((z,p)=>z+p.y,0)/pts.length});});
+  faces.sort((a,b)=>a.depth-b.depth);
+  faces.forEach(f=>{const bright=Math.max(.12,Math.min(1,.42+f.n[0]*-.24+f.n[1]*-.34+f.n[2]*.46));ctx.beginPath();f.pts.forEach((p,k)=>k?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y));ctx.closePath();ctx.fillStyle=`hsl(268 45% ${Math.round(15+bright*31)}%)`;ctx.fill();ctx.strokeStyle='#e7c48c';ctx.lineWidth=1.7;ctx.stroke();
+   // Number the actual face, rather than stamping a result over the whole model.
+   const number=f.j===d.faceIndex?d.value:(f.j%Math.max(2,sides))+1;
+   if(f.n[2]>.35){ctx.textAlign='center';ctx.textBaseline='middle';ctx.font=`800 ${Math.max(11,Math.round(radius*(f.n[2]>.85?.45:.30)))}px system-ui`;ctx.fillStyle='#fce6b6';ctx.shadowColor='#000';ctx.shadowBlur=3;ctx.fillText(String(number),f.cx,f.cy);ctx.shadowBlur=0;}
   });
-  polygons.sort((a,b)=>a.depth-b.depth);
-  polygons.forEach(poly=>{
-   const {pts,brightness,i,j}=poly;
-   ctx.beginPath();pts.forEach((p,k)=>k?ctx.lineTo(p[0],p[1]):ctx.moveTo(p[0],p[1]));ctx.closePath();
-   ctx.fillStyle=`hsl(266 38% ${Math.round(15+brightness*29)}%)`;ctx.fill();
-   ctx.strokeStyle='#d7ae72';ctx.lineWidth=1.6;ctx.stroke();
-  });
-  dice.forEach((d,i)=>{
-   const landed=elapsed>=duration;
-   if(landed){
-    ctx.textAlign='center';ctx.textBaseline='middle';
-    ctx.font=`900 ${Math.round(radius*.65)}px system-ui`;ctx.shadowColor='#100619';ctx.shadowBlur=8;
-    ctx.fillStyle=keptIndex>=0&&i!==keptIndex?'#b0a4b9':'#ffe2a3';
-    ctx.fillText(String(d.value),d.x,d.y);ctx.shadowBlur=0;
-   }
-  });
-  if(elapsed>duration){
-   const text='Total: '+total;
-   ctx.textAlign='center';ctx.font='bold 22px system-ui';ctx.fillStyle='#ffe0a5';
-   ctx.fillText(text,w/2,Math.min(h-65,floor+100));
-  }
-  if(elapsed<duration+2100)activeDiceAnimation=requestAnimationFrame(render);
-  else {overlay.remove();activeDiceAnimation=null;}
+ });
+ if(settled){ctx.textAlign='center';ctx.font='bold 23px system-ui';ctx.fillStyle='#ffe2ae';ctx.fillText('Total: '+total,w/2,Math.min(h-54,floor+radius*2.3));}
+ if(settled&&critical===1){const t=(elapsed-duration)/1000;if(t<1.45){if(!frame.broke){diceSound('crack');frame.broke=true;}const target=dice[keptIndex>=0?keptIndex:0];shards.forEach(p=>{const dist=p.speed*t,alpha=Math.max(0,1-t/1.45);ctx.save();ctx.translate(target.x+Math.cos(p.angle)*dist,target.y+Math.sin(p.angle)*dist+120*t*t);ctx.rotate(p.rot+t*6);ctx.globalAlpha=alpha;ctx.fillStyle='#ac78d5';ctx.strokeStyle='#f1c887';ctx.beginPath();ctx.moveTo(-p.size/2,-p.size/2);ctx.lineTo(p.size,0);ctx.lineTo(0,p.size);ctx.closePath();ctx.fill();ctx.stroke();ctx.restore();});ctx.fillStyle=`rgba(255,215,230,${Math.max(0,.18-t*.16)})`;ctx.fillRect(0,0,w,h);}}
+ if(settled&&critical===20){const t=(elapsed-duration)/1000;if(t<1.6){if(!frame.thunder){diceSound('thunder');frame.thunder=true;}ctx.save();ctx.globalAlpha=Math.max(0,1-t/1.6);ctx.strokeStyle='#d9e9ff';ctx.shadowColor='#a8b9ff';ctx.shadowBlur=22;ctx.lineWidth=3.5;for(let k=0;k<5;k++){let x=(k+.5)*w/5,py=-10;ctx.beginPath();ctx.moveTo(x,py);for(let j=0;j<8;j++){x+=(Math.sin(j*13+k*8+Math.floor(t*12))*27);py+=h/8;ctx.lineTo(x,py);}ctx.stroke();}ctx.fillStyle=`rgba(188,209,255,${.10*Math.abs(Math.sin(t*34))})`;ctx.fillRect(0,0,w,h);ctx.restore();}}
+ if(elapsed<duration+1900)activeDiceAnimation=requestAnimationFrame(frame);else{overlay.remove();activeDiceAnimation=null;}
  }
- activeDiceAnimation=requestAnimationFrame(render);
+ activeDiceAnimation=requestAnimationFrame(frame);
 }
 function roll(n,sides,bonus=0,title='Roll',applyEx=false){
  n=clamp(Math.floor(num(n,1)),1,20);sides=clamp(Math.floor(num(sides,20)),2,100);
