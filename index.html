@@ -234,27 +234,42 @@ function diceMesh(sides){
 // 4.1: Actual field recordings streamed from Wikimedia Commons. Online playback required.
 const REAL_DICE_URL='https://upload.wikimedia.org/wikipedia/commons/2/24/8-sided_dice_being_rolled.webm';
 const REAL_THUNDER_URL='https://upload.wikimedia.org/wikipedia/commons/transcoded/9/93/Thunder.ogg/Thunder.ogg.mp3';
-let recordedDicePlayers=[],recordedThunderPlayers=[],recordedSoundEnabled=true;
-function recordedSound(kind,count=1){
- if(!recordedSoundEnabled)return;
- const isThunder=kind==='thunder',url=isThunder?REAL_THUNDER_URL:REAL_DICE_URL;
- const pool=isThunder?recordedThunderPlayers:recordedDicePlayers;
- const limit=isThunder?2:Math.min(20,Math.max(1,count));
- for(let i=0;i<limit;i++){
+// 4.3: Preloaded samples. Never start a recording after the visual event has passed.
+let recordedSoundEnabled=true,recordedDicePlayers=[],recordedThunderPlayers=[];
+const recordedSources={roll:[],thunder:[]},recordedReady={roll:false,thunder:false};
+function preloadRecordedSounds(){
+ [['roll',REAL_DICE_URL],['thunder',REAL_THUNDER_URL]].forEach(([kind,url])=>{
+  const sample=new Audio();sample.preload='auto';sample.src=url;
+  sample.addEventListener('canplaythrough',()=>{recordedReady[kind]=true;},{once:true});
+  sample.addEventListener('canplay',()=>{recordedReady[kind]=true;},{once:true});
+  sample.addEventListener('error',()=>{recordedReady[kind]=false;},{once:true});
+  recordedSources[kind].push(sample);
+  try{sample.load();}catch(e){}
+ });
+}
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',preloadRecordedSounds,{once:true});
+else preloadRecordedSounds();
+function recordedSound(kind,count=1,variation=0){
+ if(!recordedSoundEnabled||!recordedReady[kind])return false;
+ const source=recordedSources[kind]?.[0];
+ if(!source||source.readyState<2)return false;
+ const pool=kind==='thunder'?recordedThunderPlayers:recordedDicePlayers;
+ const number=kind==='thunder'?1:Math.min(12,Math.max(1,count));
+ let played=0;
+ for(let i=0;i<number;i++){
   try{
-   const audio=new Audio(url);
-   audio.preload='auto';audio.volume=isThunder?.78:Math.min(.65,.9/Math.sqrt(limit));
-   audio.playbackRate=isThunder?1:(.86+Math.random()*.28);
-   // Stagger recordings slightly to prevent identical waveforms reinforcing.
-   const begin=()=>{audio.play().catch(()=>{});};
-   if(i===0)begin();else setTimeout(begin,Math.round(i*48+Math.random()*55));
-   pool.push(audio);
-   const cleanup=()=>{const j=pool.indexOf(audio);if(j>=0)pool.splice(j,1);audio.removeAttribute('src');audio.load();};
-   audio.addEventListener('ended',cleanup,{once:true});
-   audio.addEventListener('error',cleanup,{once:true});
-   if(pool.length>24){const old=pool.shift();old.pause();}
-  }catch(e){console.warn('Recorded sound unavailable',e);}
+   const audio=source.cloneNode(true);
+   if(audio.readyState<2)continue; // no delayed streaming or out-of-sync playback
+   audio.currentTime=kind==='thunder'?0:Math.max(0,Math.min(.17,variation*.09+Math.random()*.09));
+   audio.volume=kind==='thunder'?.85:Math.min(.75,.68/Math.sqrt(number));
+   audio.playbackRate=kind==='thunder'?1:(.86+Math.random()*.28);
+   audio.addEventListener('ended',()=>{const j=pool.indexOf(audio);if(j>=0)pool.splice(j,1);},{once:true});
+   const promise=audio.play();
+   if(promise?.catch)promise.catch(()=>{});
+   pool.push(audio);played++;
+  }catch(e){console.warn('Recorded audio unavailable',e);}
  }
+ return played>0;
 }
 // 4.0: Layered tabletop dice Foley. All sound is generated locally; no downloads.
 let diceAudioContext=null,diceAudioBuffer=null,diceAudioMaster=null,diceAudioReady=false;
@@ -485,7 +500,7 @@ function showScreenDice(sides,results,keptIndex,title,total){
   const face=mesh.f[faceIndex];let normal=[0,0,0];face.forEach(idx=>mesh.v[idx].forEach((x,k)=>normal[k]+=x/face.length));const len=Math.hypot(...normal)||1;normal=normal.map(x=>x/len);
   // Rotate the selected numbered face toward the camera at the end of the throw.
   const axis=[normal[1],-normal[0],0],axisLen=Math.hypot(...axis);const angle=Math.acos(Math.max(-1,Math.min(1,normal[2])));
-  return {value,targetX,x:targetX+(Math.random()-.5)*w*.5,y:-radius*3-Math.random()*100,vy:0,spin:[Math.random()*6,Math.random()*6,Math.random()*6],axis:axisLen?axis.map(x=>x/axisLen):[1,0,0],angle:normal[2]<-.999?Math.PI:angle,mesh,faceIndex,faceNumbers,landed:false,flash:0,fragments:null};
+  return {soundStage:0,value,targetX,x:targetX+(Math.random()-.5)*w*.5,y:-radius*3-Math.random()*100,vy:0,spin:[Math.random()*6,Math.random()*6,Math.random()*6],axis:axisLen?axis.map(x=>x/axisLen):[1,0,0],angle:normal[2]<-.999?Math.PI:angle,mesh,faceIndex,faceNumbers,landed:false,flash:0,fragments:null};
  });
  const rotateAxis=(p,axis,angle)=>{const c=Math.cos(angle),sn=Math.sin(angle),dot=p.reduce((a,x,i)=>a+x*axis[i],0),cross=[axis[1]*p[2]-axis[2]*p[1],axis[2]*p[0]-axis[0]*p[2],axis[0]*p[1]-axis[1]*p[0]];return p.map((x,i)=>x*c+cross[i]*sn+axis[i]*dot*(1-c));};
  const rotate=(p,d,settle)=>{if(settle)return rotateAxis(p,d.axis,d.angle);let [x,y,z]=p;let c=Math.cos(d.spin[0]),sn=Math.sin(d.spin[0]);[y,z]=[y*c-z*sn,y*sn+z*c];c=Math.cos(d.spin[1]);sn=Math.sin(d.spin[1]);[x,z]=[x*c+z*sn,-x*sn+z*c];c=Math.cos(d.spin[2]);sn=Math.sin(d.spin[2]);return [x*c-y*sn,x*sn+y*c,z]};
@@ -494,13 +509,21 @@ function showScreenDice(sides,results,keptIndex,title,total){
  const shatterIndex=critical===1?(keptIndex>=0?keptIndex:0):-1;
  let soundAt=0;
  // Sound must never interrupt the animation if an audio source fails.
- try { recordedSound('roll',dice.length); } catch(e) { console.warn('Dice recording unavailable',e); }
+ // A short initial contact sound, followed by each die's own impacts below.
+ try { recordedSound('roll',1); } catch(e) { console.warn('Dice recording unavailable',e); }
  function frame(now){try{if(seq!==diceThrowSequence||!overlay.isConnected)return;const elapsed=now-start,progress=Math.min(1,elapsed/duration),settled=progress>=1;
  ctx.clearRect(0,0,w,h);
  const glow=ctx.createRadialGradient(w/2,floor,0,w/2,floor,w*.55);glow.addColorStop(0,'#533b6b44');glow.addColorStop(1,'#00000000');ctx.fillStyle=glow;ctx.fillRect(0,0,w,h);
  dice.forEach((d,i)=>{
   if(!settled){const t=Math.min(1,progress*1.25);d.x+=(d.targetX-d.x)*.08;d.y=-radius*2+(floor-radius*.95+radius*2)*(1-Math.pow(1-t,2));d.y-=Math.abs(Math.sin(t*11))*radius*.6*(1-t);d.spin=d.spin.map((v,k)=>v+(k+1)*.085*(1-t*.8));if(t>.48&&now-soundAt>190){soundAt=now;}}
   else{d.x+=(d.targetX-d.x)*.12;d.y+=(floor-radius*.95-d.y)*.12;}
+  // One independent sound timeline per visible die, never an arbitrary late replay.
+  const phase=progress;
+  const stage=phase>=.86?3:phase>=.69?2:phase>=.51?1:0;
+  if(!settled&&stage>d.soundStage){
+   d.soundStage=stage;
+   try { recordedSound('roll',1,i/count); } catch(e) {}
+  }
   const breaking=settled&&critical===1&&i===shatterIndex;
   const breakT=breaking?(elapsed-duration)/1000:0;
   ctx.fillStyle='#03020b80';ctx.beginPath();ctx.ellipse(d.x,floor+radius*.65,radius*1.04,radius*.26,0,0,Math.PI*2);ctx.fill();
