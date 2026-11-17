@@ -372,12 +372,13 @@ function diceMesh(sides){
  else if(sides===8){v=[[0,0,1],[0,0,-1],[1,0,0],[0,1,0],[-1,0,0],[0,-1,0]];for(let i=0;i<4;i++){f.push([0,2+i,2+(i+1)%4]);f.push([1,2+(i+1)%4,2+i]);}}
  else if(sides===10||sides===100){
    // Exact convex pentagonal trapezohedron, dual to a pentagonal antiprism.
-   // Polar-dual vertices guarantee every numbered kite is PLANAR.
+   // Polar dual yields ten congruent, planar kite faces.
+   // The 0.88 antiprism half-height gives a compact real-world RPG d10 silhouette.
    const ring=[];
    for(let i=0;i<5;i++){
      const top=i*2*Math.PI/5, bottom=top+Math.PI/5;
-     ring.push([Math.cos(top),Math.sin(top),.52]);
-     ring.push([Math.cos(bottom),Math.sin(bottom),-.52]);
+     ring.push([Math.cos(top),Math.sin(top),.88]);
+     ring.push([Math.cos(bottom),Math.sin(bottom),-.88]);
    }
    const primal=[[0,2,4,6,8],[9,7,5,3,1]];
    for(let i=0;i<5;i++){
@@ -417,6 +418,8 @@ function diceMesh(sides){
      v=centers;f=pentagons;
    }
  }
+ // Platonic solids (d4/d6/d8/d12/d20) and the ten-face trapezohedron
+ // (d10/percentile) are generated from exact symmetric vertex constructions.
  // Uniform isotropic scaling preserves all face angles and polyhedral symmetry.
  const centroid=[0,1,2].map(k=>v.reduce((sum,p)=>sum+p[k],0)/v.length);
  v=v.map(p=>p.map((x,k)=>x-centroid[k]));
@@ -629,10 +632,10 @@ function drawCrystalFace(ctx,f,d,radius){
  grad.addColorStop(1,`hsl(277 48% ${Math.round(9+light*22)}%)`);
  ctx.fillStyle=grad;ctx.fillRect(minX-2,minY-2,maxX-minX+4,maxY-minY+4);
  // A dark beveled rim follows each edge, with an inset polished face.
- const inset=pts.map(p=>({x:cx+(p.x-cx)*.89,y:cy+(p.y-cy)*.89}));
+ const inset=pts.map(p=>({x:cx+(p.x-cx)*.94,y:cy+(p.y-cy)*.94}));
  ctx.beginPath();inset.forEach((p,k)=>k?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y));ctx.closePath();
  ctx.fillStyle=`rgba(125,92,170,${.14+light*.17})`;ctx.fill();
- ctx.strokeStyle=`rgba(255,232,177,${.22+light*.28})`;ctx.lineWidth=Math.max(.7,radius*.012);ctx.stroke();
+ ctx.strokeStyle=`rgba(255,232,177,${.22+light*.28})`;ctx.lineWidth=Math.max(.7,radius*.010);ctx.stroke();
  // Small controlled specular highlight rather than a flat cartoon fill.
  const sheen=ctx.createRadialGradient(minX+(maxX-minX)*.28,minY+(maxY-minY)*.22,1,cx,cy,Math.max(12,radius*.95));
  sheen.addColorStop(0,`rgba(255,235,215,${light*.19})`);sheen.addColorStop(1,'rgba(255,235,215,0)');
