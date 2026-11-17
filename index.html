@@ -699,10 +699,10 @@ function showScreenDice(sides,n,mode,title,bonus,penalty,onResolved){
   const x=Math.max(radius,Math.min(w-radius,targetX+Math.cos(angle)*travel));
   const y=Math.max(radius,Math.min(h-radius,targetY+Math.sin(angle)*travel));
   const heading=angle+Math.PI+(Math.random()-.5)*1.4;
-  const speed=(3.4+Math.random()*2.8)*7; // Sevenfold initial throw momentum (v7.2).
+  const speed=(3.4+Math.random()*2.8)*6.25; // Slightly below v7.2 launch impulse.
   const vx=Math.cos(heading)*speed,vy=Math.sin(heading)*speed;
   // Rotation is coupled to planar travel (rolling rather than falling).
-  velocity[0]=vy/Math.max(4,radius)*.95;velocity[1]=-vx/Math.max(4,radius)*.95;velocity[2]=(Math.random()-.5)*.003;
+  velocity[0]=vy/Math.max(4,radius)*1.55;velocity[1]=-vx/Math.max(4,radius)*1.55;velocity[2]=(Math.random()-.5)*.003;
   return {soundStage:0,targetX,targetY,x,y,vx,vy,orientation,velocity,mesh,faceNumbers,landed:false,flash:0,fragments:null,contactCount:0,sleeping:false,quietFrames:0};
  });
  // Continuous orientation: the same rotation is used throughout flight and landing.
@@ -723,7 +723,7 @@ function showScreenDice(sides,n,mode,title,bonus,penalty,onResolved){
   const visible=dice.map(faceValue);
   if(sides===100){for(let i=0;i<visible.length;i+=2){const v=visible[i]+visible[i+1];results.push(v===0?100:v);}}
   else results=visible.map(v=>sides===10&&v===0?10:v);
-  const contested=sides===20&&n===1&&mode!=='normal';
+  const contested=sides===20&&n===2&&mode!=='normal';
   keptIndex=contested?(mode==='adv'?(results[0]>=results[1]?0:1):(results[0]<=results[1]?0:1)):-1;
   const used=contested?[results[keptIndex]]:results;
   total=used.reduce((a,b)=>a+b,0)+bonus+penalty;
@@ -755,7 +755,7 @@ function showScreenDice(sides,n,mode,title,bonus,penalty,onResolved){
     const linearDrag=Math.pow(resistance,hstep);
     d.vx*=linearDrag;d.vy*=linearDrag;
     // No floating/spinning-in-place: rolling rotation follows actual tabletop displacement.
-    const coupledX=d.vy/Math.max(4,radius)*.95,coupledY=-d.vx/Math.max(4,radius)*.95;
+    const coupledX=d.vy/Math.max(4,radius)*1.55,coupledY=-d.vx/Math.max(4,radius)*1.55;
     d.velocity[0]=coupledX;
     d.velocity[1]=coupledY;
     d.velocity[2]*=Math.pow(.89,hstep);
@@ -830,9 +830,16 @@ function showScreenDice(sides,n,mode,title,bonus,penalty,onResolved){
     const t=Math.max(0,breakT-2),fade=Math.max(0,1-t/1.6);
     if(breakT<2){
       faces.forEach(f=>drawCrystalFace(ctx,f,d,radius));
-      ctx.save();ctx.beginPath();
-      faces.forEach(f=>{ctx.moveTo(f.pts[0].x,f.pts[0].y);for(let q=1;q<f.pts.length;q++)ctx.lineTo(f.pts[q].x,f.pts[q].y);ctx.closePath();});
-      ctx.clip();
+      ctx.save();
+      // Clip to the outer silhouette, not a compound path of overlapping faces:
+      // the old nonzero-winding face clip could hide the cracks entirely.
+      const silhouette=verts.map(p=>({x:p.x,y:p.y})).sort((a,b)=>a.x-b.x||a.y-b.y);
+      const cross=(o,a,b)=>(a.x-o.x)*(b.y-o.y)-(a.y-o.y)*(b.x-o.x);
+      const lower=[],upper=[];
+      for(const p of silhouette){while(lower.length>=2&&cross(lower[lower.length-2],lower[lower.length-1],p)<=0)lower.pop();lower.push(p);}
+      for(const p of silhouette.slice().reverse()){while(upper.length>=2&&cross(upper[upper.length-2],upper[upper.length-1],p)<=0)upper.pop();upper.push(p);}
+      const hull=lower.slice(0,-1).concat(upper.slice(0,-1));
+      if(hull.length){ctx.beginPath();ctx.moveTo(hull[0].x,hull[0].y);for(const p of hull.slice(1))ctx.lineTo(p.x,p.y);ctx.closePath();ctx.clip();}
       // Earthquake-style fracture: a dark, uneven fault opens first, then
       // pale crystalline edges and smaller branching cracks spread outward.
       // Fixed seeded geometry prevents cracks from flickering between frames.
@@ -867,20 +874,29 @@ function showScreenDice(sides,n,mode,title,bonus,penalty,onResolved){
         }
         return true;
       };
+      // Fine, high-contrast stone fissures. Draw over the completed faces,
+      // never behind them. Two offset hairlines provide depth without thick neon strokes.
+      const fissure=(points,growth,major)=>{
+        if(!trace(points,growth))return;
+        ctx.save();ctx.globalCompositeOperation='source-over';ctx.shadowBlur=0;
+        ctx.lineCap='butt';ctx.lineJoin='miter';
+        // A dark hairline is readable on the violet crystal even at phone sizes.
+        ctx.strokeStyle=major?'rgba(9,3,13,.98)':'rgba(12,5,19,.92)';
+        ctx.lineWidth=major?Math.max(1.35,radius*.018):Math.max(.85,radius*.010);
+        ctx.stroke();
+        // Tiny displaced stone edge: not a second wide luminous stripe.
+        ctx.translate(.65,.55);
+        ctx.strokeStyle=major?'rgba(246,211,181,.76)':'rgba(216,181,194,.52)';
+        ctx.lineWidth=major?.65:.45;
+        ctx.stroke();ctx.restore();
+      };
       d.quakeFaults.forEach((fault,k)=>{
-        const growth=Math.max(0,Math.min(1,(crackPhase-k*.085)*1.42));
+        const growth=Math.max(0,Math.min(1,(crackPhase-k*.035)*1.9));
         if(!growth)return;
-        if(trace(fault.points,growth)){
-          ctx.lineJoin='round';ctx.lineCap='round';
-          // Wide dark rift, with a bright uneven broken-stone edge.
-          ctx.strokeStyle='#100719';ctx.lineWidth=radius*(.045+.095*growth);ctx.shadowBlur=0;ctx.stroke();
-          ctx.strokeStyle='#cdb8e1';ctx.lineWidth=radius*.029;ctx.shadowColor='#e7c4ff';ctx.shadowBlur=radius*.11;ctx.stroke();
-        }
+        fissure(fault.points,growth,true);
         fault.branches.forEach((branch,j)=>{
-          const branchGrowth=Math.max(0,Math.min(1,(growth-(.28+j*.18))*2.3));
-          if(!trace(branch,branchGrowth))return;
-          ctx.shadowBlur=0;ctx.strokeStyle='#190c26';ctx.lineWidth=radius*(.035-j*.005);ctx.stroke();
-          ctx.strokeStyle='#b9a2ce';ctx.lineWidth=Math.max(.7,radius*.013);ctx.stroke();
+          const branchGrowth=Math.max(0,Math.min(1,(growth-(.20+j*.16))*2.0));
+          fissure(branch,branchGrowth,false);
         });
       });
       // Dust flecks and a restrained tremor reinforce the stone splitting.
