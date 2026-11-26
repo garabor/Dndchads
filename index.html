@@ -2870,4 +2870,32 @@ Object.assign(LEDGER_SPELL_LEVEL_OVERRIDES,{
 </script>
 <script>/* 10.8 — open a local informational dialog; never launch mail automatically */
 (()=>{const d=document.getElementById('feedbackInfoDialog'),open=document.getElementById('feedbackInfoOpen');if(!d||!open)return;let previousFocus=null;open.addEventListener('click',()=>{previousFocus=document.activeElement;if(typeof d.showModal==='function')d.showModal();else d.setAttribute('open','');document.getElementById('feedbackInfoClose').focus()});function close(){if(typeof d.close==='function')d.close();else d.removeAttribute('open');if(previousFocus&&typeof previousFocus.focus==='function')previousFocus.focus()}document.getElementById('feedbackInfoClose').addEventListener('click',close);document.getElementById('feedbackInfoDone').addEventListener('click',close);d.addEventListener('click',e=>{if(e.target===d)close()});})();
-</script></body></html>
+</script><script>
+/* 10.9 inventory weapon rolls */
+function inventoryWeaponStats(x){
+ const name=String(x.name||''); const magic=Number(name.match(/\+([123])(?:\s|$)/)?.[1]||0);
+ const base=name.replace(/\s*\+[123]\s*/g,' ').trim(); const w=WEAPON_DB.find(v=>v.name.toLowerCase()===base.toLowerCase());
+ if(!w&&x.type!=='weapon')return null;
+ const cfg=x.weaponRoll||{}; const props=w?.properties||''; const ranged=w?.group.endsWith('ranged');
+ const finesse=props.includes('Finesse'); const monk=state.className==='Monk'&&w&&!ranged&&(w.group==='simple melee'||props.includes('Light'));
+ const ability=cfg.ability|| (ranged?'dex':(finesse||monk)&&a('dex')>a('str')?'dex':'str');
+ const cl=state.className, sub=state.subclass, lv=Number(state.level)||1;
+ const choices=Object.entries(state.classOptions||{}).filter(([k])=>k.startsWith('opt:'+cl+':')).map(([,v])=>v);
+ const styles=new Set([...choices,...Object.entries(state.featChoices||{}).filter(([id])=>featGrants().some(g=>g[0]===id)).map(([,v])=>v?.name)]);
+ const martial=['Barbarian','Fighter','Paladin','Ranger'].includes(cl)||(cl==='Bard'&&sub==='College of Valor'&&lv>=3)||(cl==='Artificer'&&sub==='Battle Smith'&&lv>=3)||(cl==='Cleric'&&choices.includes('Protector'));
+ const trained=!!cl&&!!w&&(w.group.startsWith('simple')||martial||(cl==='Monk'&&props.includes('Light'))||(cl==='Rogue'&&(finesse||props.includes('Light'))));
+ const proficient=cfg.proficiency==='yes'||(cfg.proficiency!=='no'&&trained);
+ let die=cfg.die||w?.die||'1d6'; if(cfg.twoHand&&props.includes('Versatile'))die=props.match(/Versatile\s*\((\d+d\d+)\)/i)?.[1]||die;
+ if(monk&&/^1d\d+$/.test(die)){const md=lv>=17?12:lv>=11?10:lv>=5?8:6;if(md>Number(die.slice(2)))die='1d'+md;}
+ const bonus=Number(cfg.magic??magic)||0; const attack=a(ability)+(proficient?prof():0)+bonus+(ranged&&styles.has('Archery')?2:0);
+ const dueling=cfg.dueling&&styles.has('Dueling')&&w&&!ranged&&!props.includes('Two-Handed')&&!cfg.twoHand?2:0;
+ const damage=a(ability)+bonus+dueling;
+ return {w,ability,proficient,attack,die,damage,formula:die+(damage>=0?'+':'')+damage,magic:bonus,props};
+}
+function inventoryWeaponControls(x,i){const t=inventoryWeaponStats(x);if(!t)return '';const c=x.weaponRoll||{};const opts=(arr,v)=>arr.map(([k,n])=>`<option value="${k}" ${k===v?'selected':''}>${n}</option>`).join('');return `<div class="row" style="margin:8px 0;flex-wrap:wrap"><button type="button" data-invroll="attack" data-invindex="${i}">🎲 Attack ${fmt(t.attack)}</button><button type="button" data-invroll="damage" data-invindex="${i}">🎲 Damage ${esc(t.formula)}</button><button type="button" data-invroll="critical" data-invindex="${i}">Critical damage</button></div><details><summary>Weapon roll settings · ${t.ability.toUpperCase()} · ${t.proficient?'Proficient':'Not proficient'}</summary><div class="row" style="flex-wrap:wrap"><label>Ability <select data-invconfig="ability" data-invindex="${i}">${opts([['','Auto'],['str','STR'],['dex','DEX'],['int','INT'],['wis','WIS'],['cha','CHA']],c.ability||'')}</select></label><label>Proficiency <select data-invconfig="proficiency" data-invindex="${i}">${opts([['','Auto'],['yes','Yes'],['no','No']],c.proficiency||'')}</select></label><label>Magic bonus <input type="number" min="0" max="3" data-invconfig="magic" data-invindex="${i}" value="${t.magic}"></label><label>Damage dice <input data-invconfig="die" data-invindex="${i}" value="${esc(c.die||t.w?.die||'1d6')}"></label>${t.props.includes('Versatile')?`<label><input type="checkbox" data-invconfig="twoHand" data-invindex="${i}" ${c.twoHand?'checked':''}> Two-handed</label>`:''}<label><input type="checkbox" data-invconfig="dueling" data-invindex="${i}" ${c.dueling?'checked':''}> Dueling conditions met</label></div><p class="hint">${esc(t.props)} · ${esc(t.w?.type||'Custom damage')} · Conditional damage and mastery effects are manual.</p></details>`;}
+const inventoryOriginalRow=ledgerInventoryRow;ledgerInventoryRow=function(x,i,items,depth){const html=inventoryOriginalRow(x,i,items,depth);return html.slice(0,-6)+inventoryWeaponControls(x,i)+'</div>';};
+itemEl('inventoryRows').addEventListener('change',e=>{const el=e.target,k=el.dataset.invconfig;if(!k)return;const x=safeItems()[Number(el.dataset.invindex)];if(!x)return;const v=el.type==='checkbox'?el.checked:el.value;if(k==='die'&&!/^\d{1,2}d\d{1,2}$/i.test(v)){toast('Use dice such as 1d8 or 2d6');return;}x.weaponRoll={...x.weaponRoll,[k]:v};persist();renderInventory();});
+itemEl('inventoryRows').addEventListener('click',e=>{const b=e.target.closest('[data-invroll]');if(!b)return;const x=safeItems()[Number(b.dataset.invindex)],t=x&&inventoryWeaponStats(x);if(!t)return;if(b.dataset.invroll==='attack')roll(1,20,t.attack,x.name+' attack',true);else{const m=t.die.match(/^(\d+)d(\d+)$/i);if(m)roll(Number(m[1])*(b.dataset.invroll==='critical'?2:1),Number(m[2]),t.damage,x.name+' '+b.dataset.invroll,false);}});
+const inventoryPreviousDynamic=dynamicUI;dynamicUI=function(){inventoryPreviousDynamic();renderInventory();};renderInventory();
+</script>
+</body></html>
